@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { SplashScreen } from '@capacitor/splash-screen';
 import { AddMemberModal, EditMemberModal, ViewMemberModal, AddPlanModal, EditPlanModal, AddTrainerModal, AddExpenseModal, AddPaymentModal, AddAttendanceModal, BulkWhatsAppModal, ViewReceiptModal } from "./ActionModals";
 import {
   getMembersDB, addMemberDB, updateMemberDB, deleteMemberDB,
@@ -1652,6 +1653,11 @@ export default function App() {
   const [loginEmail, setLoginEmail] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
   const [loginError, setLoginError] = useState("");
+
+  useEffect(() => {
+    // Hide native splash screen once React mounts
+    SplashScreen.hide().catch(() => {});
+  }, []);
 
   const handleLoginSubmit = (e: React.FormEvent) => {
     e.preventDefault();
