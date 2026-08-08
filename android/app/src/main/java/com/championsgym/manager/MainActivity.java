@@ -1,4 +1,4 @@
-package com.gympro.manager;
+package com.championsgym.manager;
 
 import com.getcapacitor.BridgeActivity;
 

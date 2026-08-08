@@ -26,7 +26,7 @@ const handlePickContact = async (
       console.log('User cancelled contact picker or permission denied:', err);
     }
   } else {
-    alert('Device Contacts API is supported on Android mobile devices running Chrome or Edge. On desktop browsers, please enter details manually.');
+    console.log('Device Contacts API is supported on Android mobile devices running Chrome or Edge.');
   }
 };
 
