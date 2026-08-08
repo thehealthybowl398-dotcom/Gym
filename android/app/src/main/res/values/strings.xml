@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Champions Gym</string>
+    <string name="title_activity_main">Champions Gym</string>
+    <string name="package_name">com.championsgym.manager</string>
+    <string name="custom_url_scheme">com.championsgym.manager</string>
+</resources>
