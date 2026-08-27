@@ -9,7 +9,7 @@ import {
   getPaymentsDB, addPaymentDB, deletePaymentDB,
   getAttendanceDB, addAttendanceDB, updateAttendanceDB, deleteAttendanceDB,
   getUsersDB, addUserDB, deleteUserDB,
-  getAuditLogsDB, addAuditLogDB, logUserActivity, AuditLogItem,
+  getAuditLogsDB, addAuditLogDB, logUserActivity, refreshAllDBData, AuditLogItem,
   AttendanceItem, GymUser
 } from "../lib/db";
 import { shareInvoicePDFOnWhatsApp } from "../lib/pdfGenerator";
@@ -159,12 +159,12 @@ function StatCard({ label, value, delta, deltaLabel, icon, color }: {
 
 function SectionHeader({ title, subtitle, action }: { title: string; subtitle?: string; action?: React.ReactNode }) {
   return (
-    <div className="flex items-center justify-between mb-6">
+    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-6">
       <div>
-        <h1 className="text-foreground text-xl font-bold">{title}</h1>
-        {subtitle && <p className="text-muted-foreground text-sm mt-0.5">{subtitle}</p>}
+        <h1 className="text-foreground text-xl sm:text-2xl font-bold">{title}</h1>
+        {subtitle && <p className="text-muted-foreground text-xs sm:text-sm mt-0.5">{subtitle}</p>}
       </div>
-      {action && <div>{action}</div>}
+      {action && <div className="w-full sm:w-auto flex flex-wrap items-center gap-2">{action}</div>}
     </div>
   );
 }
@@ -235,7 +235,15 @@ function sendWhatsAppExpiryReminder(m: MemberItem) {
 }
 
 // ─── Dashboard Page ───────────────────────────────────────────────────────────
-function DashboardPage({ members, plans, trainers, expenses, onOpenBulkWhatsApp }: { members: MemberItem[]; plans: PlanItem[]; trainers: TrainerItem[]; expenses: ExpenseItem[]; onOpenBulkWhatsApp: () => void }) {
+function DashboardPage({ members, plans, trainers, expenses, onOpenBulkWhatsApp, onRefresh, isRefreshing }: {
+  members: MemberItem[];
+  plans: PlanItem[];
+  trainers: TrainerItem[];
+  expenses: ExpenseItem[];
+  onOpenBulkWhatsApp: () => void;
+  onRefresh: () => void;
+  isRefreshing: boolean;
+}) {
   const CustomTooltip = ({ active, payload, label }: any) => {
     if (!active || !payload?.length) return null;
     return (
@@ -292,11 +300,14 @@ function DashboardPage({ members, plans, trainers, expenses, onOpenBulkWhatsApp 
         subtitle={new Date().toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}
         action={
           <div className="flex gap-2">
-            <Btn variant="secondary" size="sm" icon={<RefreshCw className="w-3.5 h-3.5" />}>Refresh</Btn>
+            <Btn variant="secondary" size="sm" onClick={onRefresh} icon={<RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? "animate-spin text-primary" : ""}`} />}>
+              {isRefreshing ? "Refreshing..." : "Refresh"}
+            </Btn>
             <Btn variant="primary" size="sm" icon={<Plus className="w-3.5 h-3.5" />}>Quick Add</Btn>
           </div>
         }
       />
+
 
       {/* KPI Grid */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -580,10 +591,71 @@ function MembersPage({ membersList, onOpenAddMember, onEditMember, onViewMember,
         <Btn variant="secondary" size="sm" icon={<Filter className="w-3.5 h-3.5" />}>More Filters</Btn>
       </div>
 
-      {/* Table */}
-      <div className="bg-card border border-border rounded-2xl overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+      {/* Mobile View: Clean Card List (< 640px) */}
+      <div className="block sm:hidden space-y-3">
+        {filtered.length === 0 ? (
+          <div className="bg-card border border-border rounded-2xl p-6 text-center text-muted-foreground text-sm">
+            No members found.
+          </div>
+        ) : (
+          filtered.map(m => (
+            <div key={m.id} className="bg-card border border-border rounded-2xl p-4 space-y-3 shadow-sm hover:border-primary/40 transition-colors">
+              <div className="flex items-start justify-between">
+                <div className="flex items-center gap-3">
+                  <Avatar initials={m.avatar} size="md" />
+                  <div>
+                    <h4 className="text-foreground font-bold text-base leading-tight">{m.name}</h4>
+                    <p className="text-muted-foreground text-xs font-mono">{m.id} · {m.phone}</p>
+                  </div>
+                </div>
+                <Badge label={m.status} variant={statusVariant(m.status) as any} />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 bg-secondary/50 rounded-xl p-2.5 text-xs">
+                <div>
+                  <span className="text-muted-foreground block text-[10px] uppercase font-semibold">Plan</span>
+                  <span className="text-foreground font-medium">{m.plan}</span>
+                </div>
+                <div>
+                  <span className="text-muted-foreground block text-[10px] uppercase font-semibold">Trainer</span>
+                  <span className="text-foreground font-medium">{m.trainer}</span>
+                </div>
+                <div>
+                  <span className="text-muted-foreground block text-[10px] uppercase font-semibold">Joined</span>
+                  <span className="text-muted-foreground font-medium">{m.joined}</span>
+                </div>
+                <div>
+                  <span className="text-muted-foreground block text-[10px] uppercase font-semibold">Expiry</span>
+                  <span className="text-red-400 font-medium">{m.expiry}</span>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between pt-2 border-t border-border/60">
+                <Badge label={`Payment: ${m.payment}`} variant={payVariant(m.payment) as any} />
+                <div className="flex items-center gap-1">
+                  <button onClick={() => sendWhatsAppExpiryReminder(m)} className="p-2 rounded-xl bg-green-500/10 text-[#25D366] hover:bg-green-500/20 transition-colors cursor-pointer" title="Send WhatsApp Reminder">
+                    <WhatsAppIcon className="w-4 h-4 fill-[#25D366]" />
+                  </button>
+                  <button onClick={() => onViewMember(m)} className="p-2 rounded-xl bg-secondary text-muted-foreground hover:text-primary transition-colors cursor-pointer" title="View Details">
+                    <Eye className="w-4 h-4" />
+                  </button>
+                  <button onClick={() => onEditMember(m)} className="p-2 rounded-xl bg-secondary text-muted-foreground hover:text-blue-400 transition-colors cursor-pointer" title="Edit Member">
+                    <Edit2 className="w-4 h-4" />
+                  </button>
+                  <button onClick={() => onDeleteMember(m.id)} className="p-2 rounded-xl bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-colors cursor-pointer" title="Delete Member">
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+
+      {/* Desktop/Tablet View: Scrollable Data Table (>= 640px) */}
+      <div className="hidden sm:block bg-card border border-border rounded-2xl overflow-hidden">
+        <div className="overflow-x-auto scroll-touch">
+          <table className="w-full text-sm min-w-[780px]">
             <thead>
               <tr className="border-b border-border">
                 {["Member", "Phone", "Plan", "Joined", "Expiry", "Trainer", "Status", "Payment", "Actions"].map(h => (
@@ -707,7 +779,58 @@ function AttendancePage({
         ))}
       </div>
 
-      <div className="bg-card border border-border rounded-2xl overflow-hidden">
+      {/* Mobile View: Clean Card List (< 640px) */}
+      <div className="block sm:hidden space-y-3 mb-4">
+        {filteredLogs.length === 0 ? (
+          <div className="bg-card border border-border rounded-2xl p-6 text-center text-muted-foreground text-sm">
+            No attendance records found.
+          </div>
+        ) : (
+          filteredLogs.map((a, i) => {
+            const isActive = !a.checkOut || a.checkOut === "—";
+            return (
+              <div key={i} className="bg-card border border-border rounded-2xl p-4 space-y-3 shadow-sm hover:border-primary/40 transition-colors">
+                <div className="flex items-start justify-between">
+                  <div className="flex items-center gap-3">
+                    <Avatar initials={a.name.split(" ").map(n => n[0]).join("")} size="md" />
+                    <div>
+                      <h4 className="text-foreground font-bold text-base leading-tight">{a.name}</h4>
+                      <p className="text-muted-foreground text-xs font-mono">{a.id}</p>
+                    </div>
+                  </div>
+                  <Badge label={isActive ? "Checked In" : "Completed"} variant={isActive ? "orange" : "success"} />
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 bg-secondary/50 rounded-xl p-2.5 text-xs">
+                  <div>
+                    <span className="text-muted-foreground block text-[10px] uppercase font-semibold">Check In</span>
+                    <span className="text-foreground font-medium">{a.checkIn}</span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground block text-[10px] uppercase font-semibold">Check Out</span>
+                    <span className="text-muted-foreground font-medium">{a.checkOut || "—"}</span>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between pt-2 border-t border-border/60">
+                  <Badge label={`Duration: ${a.duration || "Active"}`} variant={isActive ? "orange" : "success"} />
+                  <div className="flex items-center gap-2">
+                    {isActive && (
+                      <Btn variant="primary" size="sm" onClick={() => onCheckOut(a.id, a.checkIn)}>Check Out</Btn>
+                    )}
+                    <button onClick={() => onDelete(a.id, a.checkIn)} className="p-2 rounded-xl bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-colors cursor-pointer" title="Delete Log">
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          })
+        )}
+      </div>
+
+      {/* Desktop/Tablet View: Scrollable Table (>= 640px) */}
+      <div className="hidden sm:block bg-card border border-border rounded-2xl overflow-hidden">
         <div className="p-4 border-b border-border flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
           <div className="relative flex-1 max-w-md">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
@@ -720,8 +843,8 @@ function AttendancePage({
           </div>
           <span className="text-muted-foreground text-xs">{new Date().toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}</span>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+        <div className="overflow-x-auto scroll-touch">
+          <table className="w-full text-sm min-w-[680px]">
             <thead>
               <tr className="border-b border-border">
                 {["Member", "Member ID", "Check In", "Check Out", "Duration", "Status", "Actions"].map(h => (
@@ -729,47 +852,47 @@ function AttendancePage({
                 ))}
               </tr>
             </thead>
-          <tbody>
-            {filteredLogs.length === 0 ? (
-              <tr>
-                <td colSpan={7} className="px-4 py-8 text-center text-muted-foreground">No attendance records found.</td>
-              </tr>
-            ) : (
-              filteredLogs.map((a, i) => {
-                const isActive = !a.checkOut || a.checkOut === "—";
-                return (
-                  <tr key={i} className={`border-b border-border/50 hover:bg-secondary/50 transition-colors ${i === filteredLogs.length - 1 ? "border-0" : ""}`}>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-3">
-                        <Avatar initials={a.name.split(" ").map(n => n[0]).join("")} size="sm" />
-                        <span className="text-foreground font-medium">{a.name}</span>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 text-muted-foreground font-mono text-xs">{a.id}</td>
-                    <td className="px-4 py-3 text-foreground">{a.checkIn}</td>
-                    <td className="px-4 py-3 text-muted-foreground">{a.checkOut || "—"}</td>
-                    <td className="px-4 py-3">
-                      <Badge label={a.duration || "Active"} variant={isActive ? "orange" : "success"} />
-                    </td>
-                    <td className="px-4 py-3">
-                      <Badge label={isActive ? "Checked In" : "Completed"} variant={isActive ? "orange" : "success"} />
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex gap-2">
-                        {isActive && (
-                          <Btn variant="primary" size="sm" onClick={() => onCheckOut(a.id, a.checkIn)}>Check Out</Btn>
-                        )}
-                        <button onClick={() => onDelete(a.id, a.checkIn)} className="p-1.5 rounded-lg hover:bg-red-500/10 hover:text-red-400 text-muted-foreground transition-colors cursor-pointer" title="Delete Log">
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })
-            )}
-          </tbody>
-        </table>
+            <tbody>
+              {filteredLogs.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="px-4 py-8 text-center text-muted-foreground">No attendance records found.</td>
+                </tr>
+              ) : (
+                filteredLogs.map((a, i) => {
+                  const isActive = !a.checkOut || a.checkOut === "—";
+                  return (
+                    <tr key={i} className={`border-b border-border/50 hover:bg-secondary/50 transition-colors ${i === filteredLogs.length - 1 ? "border-0" : ""}`}>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-3">
+                          <Avatar initials={a.name.split(" ").map(n => n[0]).join("")} size="sm" />
+                          <span className="text-foreground font-medium">{a.name}</span>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-muted-foreground font-mono text-xs">{a.id}</td>
+                      <td className="px-4 py-3 text-foreground">{a.checkIn}</td>
+                      <td className="px-4 py-3 text-muted-foreground">{a.checkOut || "—"}</td>
+                      <td className="px-4 py-3">
+                        <Badge label={a.duration || "Active"} variant={isActive ? "orange" : "success"} />
+                      </td>
+                      <td className="px-4 py-3">
+                        <Badge label={isActive ? "Checked In" : "Completed"} variant={isActive ? "orange" : "success"} />
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex gap-2">
+                          {isActive && (
+                            <Btn variant="primary" size="sm" onClick={() => onCheckOut(a.id, a.checkIn)}>Check Out</Btn>
+                          )}
+                          <button onClick={() => onDelete(a.id, a.checkIn)} className="p-1.5 rounded-lg hover:bg-red-500/10 hover:text-red-400 text-muted-foreground transition-colors cursor-pointer" title="Delete Log">
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
         </div>
       </div>
     </div>
@@ -856,9 +979,69 @@ function PaymentsPage({ paymentsList, membersList, onOpenAddPayment, onDeletePay
         <StatCard label="Outstanding Members" value={String(outstandingCount)} icon={<Users className="w-5 h-5" />} color="#F59E0B" />
       </div>
 
-      <div className="bg-card border border-border rounded-2xl overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+      {/* Mobile View: Clean Card List (< 640px) */}
+      <div className="block sm:hidden space-y-3 mb-4">
+        {paymentsList.length === 0 ? (
+          <div className="bg-card border border-border rounded-2xl p-6 text-center text-muted-foreground text-sm">
+            No payments received yet.
+          </div>
+        ) : (
+          paymentsList.map(p => (
+            <div key={p.invoice} className="bg-card border border-border rounded-2xl p-4 space-y-3 shadow-sm hover:border-primary/40 transition-colors">
+              <div className="flex items-start justify-between">
+                <div>
+                  <h4 className="text-foreground font-bold text-base leading-tight">{p.member}</h4>
+                  <p className="text-muted-foreground text-xs font-mono">{p.invoice} · {p.date}</p>
+                </div>
+                <Badge label={p.balance === 0 ? "Paid" : "Pending"} variant={p.balance === 0 ? "success" : "danger"} />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 bg-secondary/50 rounded-xl p-2.5 text-xs">
+                <div>
+                  <span className="text-muted-foreground block text-[10px] uppercase font-semibold">Total Amount</span>
+                  <span className="text-foreground font-semibold">₹{p.amount.toLocaleString()}</span>
+                </div>
+                <div>
+                  <span className="text-muted-foreground block text-[10px] uppercase font-semibold">Amount Paid</span>
+                  <span className="text-foreground font-bold">₹{p.paid.toLocaleString()}</span>
+                </div>
+                <div>
+                  <span className="text-muted-foreground block text-[10px] uppercase font-semibold">Discount / Tax</span>
+                  <span className="text-muted-foreground font-medium">-{p.discount} / +{p.tax}</span>
+                </div>
+                <div>
+                  <span className="text-muted-foreground block text-[10px] uppercase font-semibold">Balance Due</span>
+                  <span className={p.balance > 0 ? "text-red-400 font-bold" : "text-green-400 font-bold"}>
+                    {p.balance > 0 ? `₹${p.balance.toLocaleString()}` : "Clear"}
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between pt-2 border-t border-border/60">
+                <span className="text-muted-foreground text-xs font-medium">Mode: {p.mode}</span>
+                <div className="flex items-center gap-1">
+                  <button onClick={() => sendWhatsAppInvoice(p)} className="p-2 rounded-xl bg-green-500/10 text-[#25D366] hover:bg-green-500/20 transition-colors cursor-pointer" title="WhatsApp Invoice">
+                    <WhatsAppIcon className="w-4 h-4 fill-[#25D366]" />
+                  </button>
+                  {p.receiptUrl && (
+                    <button onClick={() => onViewReceipt(p)} className="p-2 rounded-xl bg-orange-500/10 text-orange-400 hover:bg-orange-500/20 transition-colors cursor-pointer" title="View Receipt">
+                      <Eye className="w-4 h-4" />
+                    </button>
+                  )}
+                  <button onClick={() => onDeletePayment(p.invoice)} className="p-2 rounded-xl bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-colors cursor-pointer" title="Delete Payment">
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+
+      {/* Desktop/Tablet View: Scrollable Table (>= 640px) */}
+      <div className="hidden sm:block bg-card border border-border rounded-2xl overflow-hidden">
+        <div className="overflow-x-auto scroll-touch">
+          <table className="w-full text-sm min-w-[850px]">
             <thead>
               <tr className="border-b border-border">
                 {["Invoice", "Member", "Amount", "Discount", "Tax", "Paid", "Balance", "Mode", "Date", "Actions"].map(h => (
@@ -1075,9 +1258,53 @@ function ExpensesPage({ expensesList, onOpenAddExpense, onDeleteExpense }: { exp
         <StatCard label="Total Items" value={`${expensesList.length}`} icon={<BarChart3 className="w-5 h-5" />} color="#F59E0B" />
         <StatCard label="Pending Bills" value="₹0" icon={<AlertCircle className="w-5 h-5" />} color="#A855F7" />
       </div>
-      <div className="bg-card border border-border rounded-2xl overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+      {/* Mobile View: Clean Card List (< 640px) */}
+      <div className="block sm:hidden space-y-3 mb-4">
+        {expensesList.length === 0 ? (
+          <div className="bg-card border border-border rounded-2xl p-6 text-center text-muted-foreground text-sm">
+            No expenses recorded.
+          </div>
+        ) : (
+          expensesList.map((e, i) => (
+            <div key={i} className="bg-card border border-border rounded-2xl p-4 space-y-3 shadow-sm hover:border-primary/40 transition-colors">
+              <div className="flex items-start justify-between">
+                <div>
+                  <h4 className="text-foreground font-bold text-base leading-tight">{e.title}</h4>
+                  <p className="text-muted-foreground text-xs">{e.vendor} · {e.date}</p>
+                </div>
+                <Badge label={e.status} variant={e.status === "Paid" ? "success" : "warning"} />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 bg-secondary/50 rounded-xl p-2.5 text-xs">
+                <div>
+                  <span className="text-muted-foreground block text-[10px] uppercase font-semibold">Category</span>
+                  <span className="font-semibold" style={{ color: categoryColors[e.category] ?? "#64748B" }}>
+                    {e.category}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-muted-foreground block text-[10px] uppercase font-semibold">Amount</span>
+                  <span className="text-foreground font-bold">₹{e.amount.toLocaleString()}</span>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between pt-2 border-t border-border/60">
+                <span className="text-muted-foreground text-xs">Mode: {e.mode}</span>
+                <div className="flex items-center gap-1">
+                  <button onClick={() => onDeleteExpense(i)} className="p-2 rounded-xl bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-colors cursor-pointer" title="Delete Expense">
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+
+      {/* Desktop/Tablet View: Scrollable Table (>= 640px) */}
+      <div className="hidden sm:block bg-card border border-border rounded-2xl overflow-hidden">
+        <div className="overflow-x-auto scroll-touch">
+          <table className="w-full text-sm min-w-[700px]">
             <thead>
               <tr className="border-b border-border">
                 {["Title", "Category", "Amount", "Vendor", "Date", "Mode", "Status", "Actions"].map(h => (
@@ -1626,6 +1853,11 @@ export default function App() {
   const [usersList, setUsersList] = useState<GymUser[]>([]);
   const [auditLogsList, setAuditLogsList] = useState<AuditLogItem[]>([]);
 
+  // Refresh & Loading States
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isInitialLoading, setIsInitialLoading] = useState(true);
+  const [refreshToast, setRefreshToast] = useState<string | null>(null);
+
   // Modal Visibility States
   const [isMemberModalOpen, setIsMemberModalOpen] = useState(false);
   const [editingMember, setEditingMember] = useState<MemberItem | null>(null);
@@ -1659,6 +1891,28 @@ export default function App() {
     SplashScreen.hide().catch(() => {});
   }, []);
 
+  const handleRefreshData = async () => {
+    if (isRefreshing) return;
+    setIsRefreshing(true);
+    try {
+      const fresh = await refreshAllDBData();
+      setMembersList(fresh.members);
+      setPlansList(fresh.plans);
+      setTrainersList(fresh.trainers);
+      setExpensesList(fresh.expenses);
+      setPaymentsList(fresh.payments);
+      setAttendanceList(fresh.attendance);
+      setUsersList(fresh.users);
+      setAuditLogsList(fresh.auditLogs);
+      setRefreshToast("Database refreshed with latest records!");
+      setTimeout(() => setRefreshToast(null), 3000);
+    } catch (err) {
+      console.error("Error refreshing DB:", err);
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
+
   const handleLoginSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!loginEmail || !loginPassword) {
@@ -1688,15 +1942,21 @@ export default function App() {
 
   // Initial DB Load & Expiry Checker
   useEffect(() => {
-    getMembersDB().then(setMembersList);
-    getPlansDB().then(setPlansList);
-    getTrainersDB().then(setTrainersList);
-    getExpensesDB().then(setExpensesList);
-    getPaymentsDB().then(setPaymentsList);
-    getAttendanceDB().then(setAttendanceList);
-    getUsersDB().then(setUsersList);
-    getAuditLogsDB().then(setAuditLogsList);
+    setIsInitialLoading(true);
+    refreshAllDBData().then((fresh) => {
+      setMembersList(fresh.members);
+      setPlansList(fresh.plans);
+      setTrainersList(fresh.trainers);
+      setExpensesList(fresh.expenses);
+      setPaymentsList(fresh.payments);
+      setAttendanceList(fresh.attendance);
+      setUsersList(fresh.users);
+      setAuditLogsList(fresh.auditLogs);
+    }).finally(() => {
+      setIsInitialLoading(false);
+    });
   }, []);
+
 
   // Expiry Checker Alert logic
   useEffect(() => {
@@ -1859,7 +2119,17 @@ export default function App() {
   };
 
   const pageComponents: Record<string, React.ReactNode> = {
-    dashboard: <DashboardPage members={membersList} plans={plansList} trainers={trainersList} expenses={expensesList} onOpenBulkWhatsApp={() => setIsBulkWhatsAppOpen(true)} />,
+    dashboard: (
+      <DashboardPage
+        members={membersList}
+        plans={plansList}
+        trainers={trainersList}
+        expenses={expensesList}
+        onOpenBulkWhatsApp={() => setIsBulkWhatsAppOpen(true)}
+        onRefresh={handleRefreshData}
+        isRefreshing={isRefreshing}
+      />
+    ),
     members: (
       <MembersPage
         membersList={membersList}
@@ -2081,6 +2351,17 @@ export default function App() {
           </div>
 
           <div className="ml-auto flex items-center gap-2">
+            {/* Global Refresh Data Button */}
+            <button
+              onClick={handleRefreshData}
+              disabled={isRefreshing}
+              className="p-2 rounded-xl text-muted-foreground hover:bg-card hover:text-foreground transition-colors cursor-pointer flex items-center gap-1.5 text-xs font-semibold border border-border/60 bg-secondary/40"
+              title="Refresh Database Records"
+            >
+              <RefreshCw className={`w-4 h-4 ${isRefreshing ? "animate-spin text-primary" : ""}`} />
+              <span className="hidden sm:inline">{isRefreshing ? "Syncing..." : "Refresh Data"}</span>
+            </button>
+
             <Btn variant="primary" size="sm" icon={<Plus className="w-3.5 h-3.5" />} onClick={() => setIsMemberModalOpen(true)}>
               <span className="hidden sm:inline">Quick Add</span>
             </Btn>
@@ -2127,11 +2408,43 @@ export default function App() {
           </div>
         </header>
 
-        {/* Page content */}
-        <main className="flex-1 overflow-y-auto p-3 sm:p-5 md:p-6 w-full max-w-full min-w-0 [&::-webkit-scrollbar]:hidden">
+        {/* Page content with touch momentum scroll and mobile safe-area insets */}
+        <main className="flex-1 overflow-y-auto p-3 sm:p-5 md:p-6 w-full max-w-full min-w-0 [&::-webkit-scrollbar]:hidden scroll-touch pt-safe pb-safe pl-safe pr-safe relative">
+          {isRefreshing && (
+            <div className="sticky top-0 z-30 w-full bg-primary/20 backdrop-blur-md border border-primary/30 rounded-xl px-4 py-2 mb-4 flex items-center justify-between text-xs text-primary font-medium shadow-lg animate-in fade-in duration-150">
+              <span className="flex items-center gap-2">
+                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                Fetching live database records from Supabase...
+              </span>
+              <span className="text-[10px] opacity-75">Syncing</span>
+            </div>
+          )}
           {pageComponents[activePage] ?? <ComingSoon title={currentLabel} />}
         </main>
       </div>
+
+      {/* Initial Database Loader Overlay */}
+      {isInitialLoading && (
+        <div className="fixed inset-0 z-50 bg-[#0F172A] flex flex-col items-center justify-center p-4">
+          <div className="w-16 h-16 bg-primary rounded-2xl flex items-center justify-center shadow-xl shadow-primary/30 animate-bounce mb-4">
+            <Dumbbell className="w-8 h-8 text-white" />
+          </div>
+          <h2 className="text-white text-xl font-bold tracking-tight">Champions Gym</h2>
+          <p className="text-slate-400 text-xs mt-1 animate-pulse">Syncing live database records...</p>
+          <div className="w-48 h-1.5 bg-slate-800 rounded-full overflow-hidden mt-6">
+            <div className="h-full bg-primary animate-pulse w-3/4 rounded-full" />
+          </div>
+        </div>
+      )}
+
+      {/* Refresh Success Toast Banner */}
+      {refreshToast && (
+        <div className="fixed bottom-5 right-5 z-50 bg-primary text-white font-bold px-4 py-3 rounded-2xl shadow-2xl flex items-center gap-3 border border-white/20 animate-in fade-in slide-in-from-bottom-5 duration-200">
+          <Check className="w-5 h-5 bg-white/20 rounded-full p-0.5" />
+          <span className="text-sm">{refreshToast}</span>
+        </div>
+      )}
+
 
       {/* Action Modals */}
       <AddMemberModal
