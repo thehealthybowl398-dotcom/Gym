@@ -145,13 +145,54 @@ const getStored = () => {
   };
 };
 
+async function syncToServerDB(store: any) {
+  try {
+    if (typeof fetch !== 'undefined') {
+      await fetch('/api/db', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(store)
+      });
+    }
+  } catch {}
+}
+
+export async function syncFromServerDB(): Promise<void> {
+  try {
+    if (typeof fetch !== 'undefined') {
+      const res = await fetch('/api/db');
+      if (res.ok) {
+        const data = await res.json();
+        if (data && typeof data === 'object') {
+          let updated = false;
+          const keys = ['gyms', 'members', 'plans', 'trainers', 'expenses', 'payments', 'attendance', 'users', 'auditLogs'];
+          keys.forEach(key => {
+            if (Array.isArray(data[key])) {
+              localStore[key] = data[key];
+              updated = true;
+            }
+          });
+          if (updated) {
+            try {
+              localStorage.setItem(STORAGE_KEY, JSON.stringify(localStore));
+            } catch {}
+          }
+        }
+      }
+    }
+  } catch {}
+}
+
 const saveStored = (store: any) => {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
   } catch {}
+  syncToServerDB(store);
 };
 
 const localStore = getStored();
+// Perform initial sync from server DB on load
+syncFromServerDB();
 
 // ─── Gyms DB API ────────────────────────────────────────────────────────────
 export async function getGymsDB(): Promise<Gym[]> {
@@ -719,6 +760,7 @@ export async function logUserActivity(
 
 export async function refreshAllDBData(gymId?: string) {
   const targetGym = gymId || 'gym-1';
+  await syncFromServerDB();
   const [
     gyms,
     members,

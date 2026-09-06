@@ -2032,22 +2032,41 @@ export default function App() {
     logUserActivity(matched, "User Login", "Auth", `User ${matched.name} logged into portal`, selectedGymId).then(log => setAuditLogsList(prev => [log, ...prev]));
   };
 
-  // Initial DB Load & Expiry Checker for Selected Gym
+  // Initial DB Load, Auto Cross-Browser Polling & Expiry Checker for Selected Gym
   useEffect(() => {
-    setIsInitialLoading(true);
-    refreshAllDBData(selectedGymId).then((fresh) => {
-      if (fresh.gyms && fresh.gyms.length > 0) setGymsList(fresh.gyms);
-      setMembersList(fresh.members);
-      setPlansList(fresh.plans);
-      setTrainersList(fresh.trainers);
-      setExpensesList(fresh.expenses);
-      setPaymentsList(fresh.payments);
-      setAttendanceList(fresh.attendance);
-      setUsersList(fresh.users);
-      setAuditLogsList(fresh.auditLogs);
-    }).finally(() => {
-      setIsInitialLoading(false);
-    });
+    let isMounted = true;
+    const loadData = async (showLoading = false) => {
+      if (showLoading) setIsInitialLoading(true);
+      try {
+        const fresh = await refreshAllDBData(selectedGymId);
+        if (!isMounted) return;
+        if (fresh.gyms && fresh.gyms.length > 0) setGymsList(fresh.gyms);
+        setMembersList(fresh.members);
+        setPlansList(fresh.plans);
+        setTrainersList(fresh.trainers);
+        setExpensesList(fresh.expenses);
+        setPaymentsList(fresh.payments);
+        setAttendanceList(fresh.attendance);
+        setUsersList(fresh.users);
+        setAuditLogsList(fresh.auditLogs);
+      } catch (err) {
+        console.error("Error loading DB:", err);
+      } finally {
+        if (isMounted && showLoading) setIsInitialLoading(false);
+      }
+    };
+
+    loadData(true);
+
+    const interval = setInterval(() => loadData(false), 3000);
+    const handleFocus = () => loadData(false);
+    window.addEventListener("focus", handleFocus);
+
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+      window.removeEventListener("focus", handleFocus);
+    };
   }, [selectedGymId]);
 
   // Expiry Checker Alert logic
