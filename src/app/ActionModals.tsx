@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Plus, UserCheck, CreditCard, Award, Wallet, MapPin, FileText, Check, Smartphone, Upload, Eye, Image } from 'lucide-react';
+import { X, Plus, UserCheck, CreditCard, Award, Wallet, MapPin, FileText, Check, Smartphone, Upload, Eye, Image, Building2 } from 'lucide-react';
 import { MemberItem, PaymentItem, TrainerItem, PlanItem, ExpenseItem } from './App';
 
 const handlePickContact = async (
@@ -1314,3 +1314,107 @@ export function BulkWhatsAppModal({
     </Modal>
   );
 }
+
+// ─── Add Gym Modal ───────────────────────────────────────────────────────────
+export function AddGymModal({
+  isOpen,
+  onClose,
+  onAdd
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  onAdd: (gym: { id: string; name: string; location: string; code: string; phone?: string }) => void;
+}) {
+  const [name, setName] = useState('');
+  const [location, setLocation] = useState('');
+  const [code, setCode] = useState('');
+  const [phone, setPhone] = useState('');
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!name.trim()) return;
+    const generatedId = `gym-${Date.now()}`;
+    const generatedCode = code.trim() || `CG-${name.slice(0, 3).toUpperCase()}`;
+    onAdd({
+      id: generatedId,
+      name: name.trim(),
+      location: location.trim() || 'Main City Branch',
+      code: generatedCode,
+      phone: phone.trim() || '+91 80 4567 8900'
+    });
+    setName('');
+    setLocation('');
+    setCode('');
+    setPhone('');
+    onClose();
+  };
+
+  return (
+    <Modal isOpen={isOpen} onClose={onClose} title="Add New Gym Branch">
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <div>
+          <label className="block text-xs font-semibold text-slate-300 uppercase mb-1">Gym Branch Name *</label>
+          <input
+            type="text"
+            placeholder="e.g. Champions Gym - South Extension"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2 text-sm text-white outline-none focus:border-orange-500"
+            required
+          />
+        </div>
+
+        <div>
+          <label className="block text-xs font-semibold text-slate-300 uppercase mb-1">Location / Address</label>
+          <input
+            type="text"
+            placeholder="e.g. Plot 45, Sector 18, City Center"
+            value={location}
+            onChange={(e) => setLocation(e.target.value)}
+            className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2 text-sm text-white outline-none focus:border-orange-500"
+          />
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-xs font-semibold text-slate-300 uppercase mb-1">Branch Code</label>
+            <input
+              type="text"
+              placeholder="e.g. CG-SE"
+              value={code}
+              onChange={(e) => setCode(e.target.value)}
+              className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2 text-sm text-white outline-none focus:border-orange-500 font-mono"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-slate-300 uppercase mb-1">Contact Phone</label>
+            <input
+              type="text"
+              placeholder="e.g. +91 98765 43210"
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2 text-sm text-white outline-none focus:border-orange-500"
+            />
+          </div>
+        </div>
+
+        <div className="pt-2 flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-300 hover:bg-slate-800 transition-colors cursor-pointer"
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            className="px-4 py-2 rounded-xl text-xs font-bold bg-orange-500 hover:bg-orange-600 text-white transition-colors flex items-center gap-1.5 shadow-lg shadow-orange-500/20 cursor-pointer"
+          >
+            <Building2 className="w-3.5 h-3.5" /> Save Gym Branch
+          </button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+

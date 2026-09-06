@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { SplashScreen } from '@capacitor/splash-screen';
-import { AddMemberModal, EditMemberModal, ViewMemberModal, AddPlanModal, EditPlanModal, AddTrainerModal, AddExpenseModal, AddPaymentModal, AddAttendanceModal, BulkWhatsAppModal, ViewReceiptModal } from "./ActionModals";
+import { AddMemberModal, EditMemberModal, ViewMemberModal, AddPlanModal, EditPlanModal, AddTrainerModal, AddExpenseModal, AddPaymentModal, AddAttendanceModal, BulkWhatsAppModal, ViewReceiptModal, AddGymModal } from "./ActionModals";
 import {
   getMembersDB, addMemberDB, updateMemberDB, deleteMemberDB,
   getPlansDB, addPlanDB, updatePlanDB, deletePlanDB,
@@ -10,7 +10,7 @@ import {
   getAttendanceDB, addAttendanceDB, updateAttendanceDB, deleteAttendanceDB,
   getUsersDB, addUserDB, deleteUserDB,
   getAuditLogsDB, addAuditLogDB, logUserActivity, refreshAllDBData, AuditLogItem,
-  AttendanceItem, GymUser
+  AttendanceItem, GymUser, Gym, getGymsDB, addGymDB, defaultGyms
 } from "../lib/db";
 import { shareInvoicePDFOnWhatsApp } from "../lib/pdfGenerator";
 import {
@@ -52,6 +52,7 @@ export interface MemberItem {
   status: string;
   payment: string;
   avatar: string;
+  gym_id?: string;
 }
 
 export interface PaymentItem {
@@ -65,6 +66,7 @@ export interface PaymentItem {
   mode: string;
   date: string;
   receiptUrl?: string;
+  gym_id?: string;
 }
 
 export interface TrainerItem {
@@ -75,6 +77,7 @@ export interface TrainerItem {
   members: number;
   rating: number;
   avatar: string;
+  gym_id?: string;
 }
 
 export interface PlanItem {
@@ -83,6 +86,7 @@ export interface PlanItem {
   price: number;
   popular: boolean;
   features: string[];
+  gym_id?: string;
 }
 
 export interface ExpenseItem {
@@ -93,6 +97,7 @@ export interface ExpenseItem {
   date: string;
   mode: string;
   status: string;
+  gym_id?: string;
 }
 
 // ─── Data Constants ─────────────────────────────────────────────────────────
@@ -1588,17 +1593,24 @@ function NotificationsPage({ notificationsList }: { notificationsList: { type: s
 }
 
 // ─── Settings Page ────────────────────────────────────────────────────────────
-// ─── Settings Page ────────────────────────────────────────────────────────────
 function SettingsPage({
   usersList,
   auditLogsList,
   onAddUser,
-  onDeleteUser
+  onDeleteUser,
+  gymsList,
+  selectedGymId,
+  onSelectGym,
+  onOpenAddGym
 }: {
   usersList: GymUser[];
   auditLogsList: AuditLogItem[];
   onAddUser: (u: GymUser) => void;
   onDeleteUser: (id: string) => void;
+  gymsList: Gym[];
+  selectedGymId: string;
+  onSelectGym: (id: string) => void;
+  onOpenAddGym: () => void;
 }) {
   const [newUserName, setNewUserName] = useState('');
   const [newUserEmail, setNewUserEmail] = useState('');
@@ -1646,8 +1658,51 @@ function SettingsPage({
 
   return (
     <div className="space-y-6">
-      <SectionHeader title="Settings" subtitle="Configure your gym profile, user roles & audit logs" />
+      <SectionHeader title="Settings" subtitle="Configure your gym profile, multi-gym locations, user roles & audit logs" />
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Multi-Gym Location Management */}
+        <div className="lg:col-span-2 bg-card border border-border rounded-2xl p-6 flex flex-col gap-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-foreground font-bold flex items-center gap-2">
+                <Building2 className="w-4 h-4 text-primary" /> Active Gym Branches ({gymsList.length})
+              </h3>
+              <p className="text-muted-foreground text-xs mt-0.5">Switch active branch context or register a new gym location to isolate records.</p>
+            </div>
+            <Btn variant="primary" size="sm" icon={<Plus className="w-3.5 h-3.5" />} onClick={onOpenAddGym}>
+              Add Branch
+            </Btn>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-2">
+            {gymsList.map(gym => (
+              <div
+                key={gym.id}
+                className={`p-4 rounded-xl border transition-all flex items-start justify-between ${selectedGymId === gym.id ? "bg-primary/10 border-primary shadow-sm" : "bg-secondary/40 border-border"}`}
+              >
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-bold text-foreground">{gym.name}</span>
+                    {selectedGymId === gym.id && <span className="bg-primary text-white text-[10px] font-bold px-2 py-0.5 rounded-full">ACTIVE</span>}
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
+                    <Building2 className="w-3 h-3 text-muted-foreground" /> {gym.location}
+                  </p>
+                  <p className="text-[11px] font-mono text-slate-400 mt-0.5">Code: {gym.code} {gym.phone ? `· ${gym.phone}` : ''}</p>
+                </div>
+                {selectedGymId !== gym.id && (
+                  <button
+                    onClick={() => onSelectGym(gym.id)}
+                    className="text-xs font-semibold text-primary hover:underline px-2.5 py-1 rounded bg-primary/10 transition-colors cursor-pointer"
+                  >
+                    Switch Context
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+
         {sections.map(s => (
           <div key={s.title} className="bg-card border border-border rounded-2xl p-6">
             <h3 className="text-foreground font-bold mb-5 flex items-center gap-2">
@@ -1843,6 +1898,20 @@ export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [mobileOpen, setMobileOpen] = useState(false);
 
+  // Multi-Gym State
+  const [gymsList, setGymsList] = useState<Gym[]>(defaultGyms);
+  const [selectedGymId, setSelectedGymId] = useState<string>(() => {
+    try {
+      return localStorage.getItem("fitpeak_selected_gym") || "gym-1";
+    } catch {
+      return "gym-1";
+    }
+  });
+  const [showGymDropdown, setShowGymDropdown] = useState(false);
+  const [isAddGymModalOpen, setIsAddGymModalOpen] = useState(false);
+
+  const currentGym = gymsList.find(g => g.id === selectedGymId) || gymsList[0] || defaultGyms[0];
+
   // Dynamic state loaded from DB
   const [membersList, setMembersList] = useState<MemberItem[]>([]);
   const [plansList, setPlansList] = useState<PlanItem[]>([]);
@@ -1895,7 +1964,8 @@ export default function App() {
     if (isRefreshing) return;
     setIsRefreshing(true);
     try {
-      const fresh = await refreshAllDBData();
+      const fresh = await refreshAllDBData(selectedGymId);
+      if (fresh.gyms && fresh.gyms.length > 0) setGymsList(fresh.gyms);
       setMembersList(fresh.members);
       setPlansList(fresh.plans);
       setTrainersList(fresh.trainers);
@@ -1904,13 +1974,35 @@ export default function App() {
       setAttendanceList(fresh.attendance);
       setUsersList(fresh.users);
       setAuditLogsList(fresh.auditLogs);
-      setRefreshToast("Database refreshed with latest records!");
+      setRefreshToast(`Refreshed data for ${currentGym.name}!`);
       setTimeout(() => setRefreshToast(null), 3000);
     } catch (err) {
       console.error("Error refreshing DB:", err);
     } finally {
       setIsRefreshing(false);
     }
+  };
+
+  const handleSelectGym = (gymId: string) => {
+    setSelectedGymId(gymId);
+    try {
+      localStorage.setItem("fitpeak_selected_gym", gymId);
+    } catch {}
+    const targetGym = gymsList.find(g => g.id === gymId);
+    if (targetGym) {
+      setRefreshToast(`Switched location to ${targetGym.name}`);
+      setTimeout(() => setRefreshToast(null), 3000);
+      logUserActivity(loggedInUser, "Switch Gym", "System", `Switched portal context to ${targetGym.name} (${gymId})`, gymId)
+        .then(log => setAuditLogsList(prev => [log, ...prev]));
+    }
+  };
+
+  const handleAddGym = async (gymData: Gym) => {
+    const newGym = await addGymDB(gymData);
+    setGymsList(prev => [...prev.filter(g => g.id !== newGym.id), newGym]);
+    handleSelectGym(newGym.id);
+    logUserActivity(loggedInUser, "Add Gym", "System", `Added new gym branch ${newGym.name} (${newGym.id})`, newGym.id)
+      .then(log => setAuditLogsList(prev => [log, ...prev]));
   };
 
   const handleLoginSubmit = (e: React.FormEvent) => {
@@ -1937,13 +2029,14 @@ export default function App() {
       localStorage.setItem("fitpeak_gym_session", JSON.stringify(matched));
     } catch {}
     setLoginError("");
-    logUserActivity(matched, "User Login", "Auth", `User ${matched.name} logged into portal`).then(log => setAuditLogsList(prev => [log, ...prev]));
+    logUserActivity(matched, "User Login", "Auth", `User ${matched.name} logged into portal`, selectedGymId).then(log => setAuditLogsList(prev => [log, ...prev]));
   };
 
-  // Initial DB Load & Expiry Checker
+  // Initial DB Load & Expiry Checker for Selected Gym
   useEffect(() => {
     setIsInitialLoading(true);
-    refreshAllDBData().then((fresh) => {
+    refreshAllDBData(selectedGymId).then((fresh) => {
+      if (fresh.gyms && fresh.gyms.length > 0) setGymsList(fresh.gyms);
       setMembersList(fresh.members);
       setPlansList(fresh.plans);
       setTrainersList(fresh.trainers);
@@ -1955,8 +2048,7 @@ export default function App() {
     }).finally(() => {
       setIsInitialLoading(false);
     });
-  }, []);
-
+  }, [selectedGymId]);
 
   // Expiry Checker Alert logic
   useEffect(() => {
@@ -1984,87 +2076,85 @@ export default function App() {
         );
         return unique;
       });
-
-      // System notifications are added dynamically
     }
   }, [membersList]);
 
   const handleAddMember = async (m: MemberItem) => {
-    const newM = await addMemberDB(m);
+    const newM = await addMemberDB(m, selectedGymId);
     setMembersList(prev => [newM, ...prev]);
-    logUserActivity(loggedInUser, "Create Member", "Member", `Added member ${m.name} (${m.id})`).then(log => setAuditLogsList(prev => [log, ...prev]));
+    logUserActivity(loggedInUser, "Create Member", "Member", `Added member ${m.name} (${m.id})`, selectedGymId).then(log => setAuditLogsList(prev => [log, ...prev]));
   };
 
   const handleUpdateMember = async (m: MemberItem) => {
     const updated = await updateMemberDB(m);
     setMembersList(prev => prev.map(item => item.id === updated.id ? updated : item));
     setEditingMember(null);
-    logUserActivity(loggedInUser, "Update Member", "Member", `Updated details for ${m.name} (${m.id})`).then(log => setAuditLogsList(prev => [log, ...prev]));
+    logUserActivity(loggedInUser, "Update Member", "Member", `Updated details for ${m.name} (${m.id})`, selectedGymId).then(log => setAuditLogsList(prev => [log, ...prev]));
   };
 
   const handleDeleteMember = async (id: string) => {
     await deleteMemberDB(id);
     setMembersList(prev => prev.filter(m => m.id !== id));
-    logUserActivity(loggedInUser, "Delete Member", "Member", `Deleted member ID ${id}`).then(log => setAuditLogsList(prev => [log, ...prev]));
+    logUserActivity(loggedInUser, "Delete Member", "Member", `Deleted member ID ${id}`, selectedGymId).then(log => setAuditLogsList(prev => [log, ...prev]));
   };
 
   const handleAddPlan = async (p: PlanItem) => {
-    const newP = await addPlanDB(p);
+    const newP = await addPlanDB(p, selectedGymId);
     setPlansList(prev => [newP, ...prev]);
-    logUserActivity(loggedInUser, "Create Plan", "Plan", `Created plan ${p.name} (₹${p.price})`).then(log => setAuditLogsList(prev => [log, ...prev]));
+    logUserActivity(loggedInUser, "Create Plan", "Plan", `Created plan ${p.name} (₹${p.price})`, selectedGymId).then(log => setAuditLogsList(prev => [log, ...prev]));
   };
 
   const handleUpdatePlan = async (p: PlanItem, oldName: string) => {
     const updated = await updatePlanDB(p, oldName);
     setPlansList(prev => prev.map(item => item.name === oldName ? updated : item));
     setEditingPlan(null);
-    logUserActivity(loggedInUser, "Update Plan", "Plan", `Updated plan ${p.name}`).then(log => setAuditLogsList(prev => [log, ...prev]));
+    logUserActivity(loggedInUser, "Update Plan", "Plan", `Updated plan ${p.name}`, selectedGymId).then(log => setAuditLogsList(prev => [log, ...prev]));
   };
 
   const handleDeletePlan = async (name: string) => {
     await deletePlanDB(name);
     setPlansList(prev => prev.filter(p => p.name !== name));
-    logUserActivity(loggedInUser, "Delete Plan", "Plan", `Deleted plan ${name}`).then(log => setAuditLogsList(prev => [log, ...prev]));
+    logUserActivity(loggedInUser, "Delete Plan", "Plan", `Deleted plan ${name}`, selectedGymId).then(log => setAuditLogsList(prev => [log, ...prev]));
   };
 
   const handleAddTrainer = async (t: TrainerItem) => {
-    const newT = await addTrainerDB(t);
+    const newT = await addTrainerDB(t, selectedGymId);
     setTrainersList(prev => [newT, ...prev]);
-    logUserActivity(loggedInUser, "Create Trainer", "Trainer", `Added trainer ${t.name}`).then(log => setAuditLogsList(prev => [log, ...prev]));
+    logUserActivity(loggedInUser, "Create Trainer", "Trainer", `Added trainer ${t.name}`, selectedGymId).then(log => setAuditLogsList(prev => [log, ...prev]));
   };
 
   const handleDeleteTrainer = async (name: string) => {
     await deleteTrainerDB(name);
     setTrainersList(prev => prev.filter(t => t.name !== name));
-    logUserActivity(loggedInUser, "Delete Trainer", "Trainer", `Deleted trainer ${name}`).then(log => setAuditLogsList(prev => [log, ...prev]));
+    logUserActivity(loggedInUser, "Delete Trainer", "Trainer", `Deleted trainer ${name}`, selectedGymId).then(log => setAuditLogsList(prev => [log, ...prev]));
   };
 
   const handleAddExpense = async (e: ExpenseItem) => {
-    const newE = await addExpenseDB(e);
+    const newE = await addExpenseDB(e, selectedGymId);
     setExpensesList(prev => [newE, ...prev]);
-    logUserActivity(loggedInUser, "Create Expense", "Expense", `Recorded expense ${e.title} (₹${e.amount})`).then(log => setAuditLogsList(prev => [log, ...prev]));
+    logUserActivity(loggedInUser, "Create Expense", "Expense", `Recorded expense ${e.title} (₹${e.amount})`, selectedGymId).then(log => setAuditLogsList(prev => [log, ...prev]));
   };
 
   const handleDeleteExpense = async (idx: number) => {
     await deleteExpenseDB(idx);
     setExpensesList(prev => prev.filter((_, i) => i !== idx));
-    logUserActivity(loggedInUser, "Delete Expense", "Expense", `Deleted expense index ${idx}`).then(log => setAuditLogsList(prev => [log, ...prev]));
+    logUserActivity(loggedInUser, "Delete Expense", "Expense", `Deleted expense index ${idx}`, selectedGymId).then(log => setAuditLogsList(prev => [log, ...prev]));
   };
 
   const handleAddPayment = async (p: PaymentItem) => {
-    const newP = await addPaymentDB(p);
+    const newP = await addPaymentDB(p, selectedGymId);
     setPaymentsList(prev => [newP, ...prev]);
-    logUserActivity(loggedInUser, "Create Invoice", "Payment", `Recorded payment ₹${p.paid} for ${p.member} (${p.invoice})`).then(log => setAuditLogsList(prev => [log, ...prev]));
+    logUserActivity(loggedInUser, "Create Invoice", "Payment", `Recorded payment ₹${p.paid} for ${p.member} (${p.invoice})`, selectedGymId).then(log => setAuditLogsList(prev => [log, ...prev]));
   };
 
   const handleDeletePayment = async (invoice: string) => {
     await deletePaymentDB(invoice);
     setPaymentsList(prev => prev.filter(p => p.invoice !== invoice));
-    logUserActivity(loggedInUser, "Delete Payment", "Payment", `Deleted invoice ${invoice}`).then(log => setAuditLogsList(prev => [log, ...prev]));
+    logUserActivity(loggedInUser, "Delete Payment", "Payment", `Deleted invoice ${invoice}`, selectedGymId).then(log => setAuditLogsList(prev => [log, ...prev]));
   };
 
   const handleCheckIn = async (item: AttendanceItem) => {
-    const newA = await addAttendanceDB(item);
+    const newA = await addAttendanceDB(item, selectedGymId);
     setAttendanceList(prev => [newA, ...prev]);
   };
 
@@ -2107,15 +2197,15 @@ export default function App() {
   };
 
   const handleAddUser = async (u: GymUser) => {
-    const newU = await addUserDB(u);
+    const newU = await addUserDB(u, selectedGymId);
     setUsersList(prev => [newU, ...prev]);
-    logUserActivity(loggedInUser, "Create User", "User", `Created user ${u.name} (${u.email}) - Role: ${u.role}`).then(log => setAuditLogsList(prev => [log, ...prev]));
+    logUserActivity(loggedInUser, "Create User", "User", `Created user ${u.name} (${u.email}) - Role: ${u.role}`, selectedGymId).then(log => setAuditLogsList(prev => [log, ...prev]));
   };
 
   const handleDeleteUser = async (id: string) => {
     await deleteUserDB(id);
     setUsersList(prev => prev.filter(u => u.id !== id));
-    logUserActivity(loggedInUser, "Delete User", "User", `Deleted user ID ${id}`).then(log => setAuditLogsList(prev => [log, ...prev]));
+    logUserActivity(loggedInUser, "Delete User", "User", `Deleted user ID ${id}`, selectedGymId).then(log => setAuditLogsList(prev => [log, ...prev]));
   };
 
   const pageComponents: Record<string, React.ReactNode> = {
@@ -2189,6 +2279,10 @@ export default function App() {
         auditLogsList={auditLogsList}
         onAddUser={handleAddUser}
         onDeleteUser={handleDeleteUser}
+        gymsList={gymsList}
+        selectedGymId={selectedGymId}
+        onSelectGym={handleSelectGym}
+        onOpenAddGym={() => setIsAddGymModalOpen(true)}
       />
     ),
   };
@@ -2336,10 +2430,73 @@ export default function App() {
       {/* Main area */}
       <div className="flex-1 flex flex-col overflow-hidden min-w-0">
         {/* Top nav */}
-        <header className="bg-sidebar border-b border-sidebar-border px-5 py-3 flex items-center gap-4 flex-shrink-0">
+        <header className="bg-sidebar border-b border-sidebar-border px-5 py-3 flex items-center gap-3 sm:gap-4 flex-shrink-0">
           <button className="lg:hidden text-muted-foreground hover:text-foreground transition-colors cursor-pointer" onClick={() => setMobileOpen(true)}>
             <Menu className="w-5 h-5" />
           </button>
+
+          {/* Gym Switcher Selector Dropdown */}
+          <div className="relative z-30">
+            <button
+              onClick={() => setShowGymDropdown(v => !v)}
+              className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-card border border-border hover:border-primary/40 text-foreground transition-all cursor-pointer shadow-sm group"
+              title="Switch Active Gym Branch"
+            >
+              <div className="w-7 h-7 rounded-lg bg-primary/15 text-primary flex items-center justify-center font-bold text-xs group-hover:bg-primary group-hover:text-white transition-colors">
+                <Building2 className="w-4 h-4" />
+              </div>
+              <div className="text-left hidden xs:block">
+                <p className="text-[9px] font-bold text-primary uppercase tracking-wider leading-none">Active Gym</p>
+                <p className="text-xs font-bold text-foreground leading-tight truncate max-w-[130px] sm:max-w-[180px]">{currentGym.name}</p>
+              </div>
+              <ChevronDown className={`w-3.5 h-3.5 text-muted-foreground transition-transform duration-150 ${showGymDropdown ? 'rotate-180 text-primary' : ''}`} />
+            </button>
+
+            {showGymDropdown && (
+              <div className="absolute top-full left-0 mt-2 w-72 bg-card border border-border rounded-2xl shadow-2xl p-2 z-50 animate-in fade-in zoom-in-95 duration-150">
+                <div className="px-3 py-2 border-b border-border/50 mb-1 flex items-center justify-between">
+                  <div>
+                    <p className="text-xs font-bold text-foreground">Select Gym Branch</p>
+                    <p className="text-[10px] text-muted-foreground">Data saves & loads per gym</p>
+                  </div>
+                  <span className="text-[10px] font-mono bg-primary/10 text-primary px-1.5 py-0.5 rounded font-semibold">{gymsList.length} Branches</span>
+                </div>
+                <div className="max-h-60 overflow-y-auto space-y-1 pr-0.5 [&::-webkit-scrollbar]:hidden">
+                  {gymsList.map(gym => (
+                    <button
+                      key={gym.id}
+                      onClick={() => {
+                        handleSelectGym(gym.id);
+                        setShowGymDropdown(false);
+                      }}
+                      className={`w-full text-left px-3 py-2.5 rounded-xl flex items-center justify-between transition-colors cursor-pointer ${selectedGymId === gym.id ? "bg-primary/15 text-primary font-bold border border-primary/30" : "hover:bg-sidebar-accent text-foreground"}`}
+                    >
+                      <div className="flex items-center gap-2.5 truncate">
+                        <Building2 className={`w-4 h-4 flex-shrink-0 ${selectedGymId === gym.id ? "text-primary" : "text-muted-foreground"}`} />
+                        <div className="truncate">
+                          <p className="text-xs font-semibold truncate">{gym.name}</p>
+                          <p className="text-[10px] text-muted-foreground truncate">{gym.location}</p>
+                        </div>
+                      </div>
+                      {selectedGymId === gym.id && <Check className="w-4 h-4 text-primary flex-shrink-0 ml-2" />}
+                    </button>
+                  ))}
+                </div>
+                <div className="border-t border-border/50 mt-1 pt-1">
+                  <button
+                    onClick={() => {
+                      setShowGymDropdown(false);
+                      setIsAddGymModalOpen(true);
+                    }}
+                    className="w-full text-left px-3 py-2 rounded-xl text-xs font-semibold text-primary hover:bg-primary/10 flex items-center gap-2 transition-colors cursor-pointer"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    Add New Gym Branch
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
 
           {/* Search */}
           <div className="relative flex-1 max-w-md hidden sm:block">
@@ -2508,6 +2665,11 @@ export default function App() {
         isOpen={!!viewingReceipt}
         payment={viewingReceipt}
         onClose={() => setViewingReceipt(null)}
+      />
+      <AddGymModal
+        isOpen={isAddGymModalOpen}
+        onClose={() => setIsAddGymModalOpen(false)}
+        onAdd={handleAddGym}
       />
     </div>
   );

@@ -1,12 +1,21 @@
 import { supabase, SUPABASE_URL } from '../lib/supabase';
 import { MemberItem, PlanItem, TrainerItem, ExpenseItem, PaymentItem } from '../app/App';
 
+export interface Gym {
+  id: string;
+  name: string;
+  location: string;
+  code: string;
+  phone?: string;
+}
+
 export interface GymUser {
   id: string;
   name: string;
   email: string;
   password?: string;
   role: string;
+  gym_id?: string;
   created_at?: string;
 }
 
@@ -19,27 +28,34 @@ export interface AuditLogItem {
   action: string;
   category: string;
   details: string;
+  gym_id?: string;
 }
 
 export interface AttendanceItem {
-  name: string;
   id: string;
+  name: string;
   checkIn: string;
   checkOut: string;
   duration: string;
   date: string;
+  gym_id?: string;
 }
+
+export const defaultGyms: Gym[] = [
+  { id: 'gym-1', name: 'Champions Gym - Branch 1', location: 'Civil Lines, Main Road', code: 'CG-MAIN', phone: '+91 80 4567 8901' },
+  { id: 'gym-2', name: 'Champions Gym - Branch 2', location: 'City Center, 2nd Floor', code: 'CG-B2', phone: '+91 80 4567 8902' }
+];
 
 // ─── Table Schemas for Payload Sanitization ─────────────────────────────────
 const SCHEMAS = {
-  members: ['id', 'name', 'phone', 'plan', 'joined', 'start', 'expiry', 'trainer', 'status', 'payment', 'avatar'],
-  plans: ['name', 'duration', 'price', 'popular', 'features'],
-  trainers: ['name', 'specialization', 'experience', 'salary', 'members', 'rating', 'avatar'],
-  expenses: ['id', 'title', 'category', 'amount', 'vendor', 'date', 'mode', 'status'],
-  payments: ['invoice', 'member', 'amount', 'discount', 'tax', 'paid', 'balance', 'date', 'mode', 'receiptUrl'],
-  attendance: ['id', 'name', 'checkIn', 'checkOut', 'duration', 'date'],
-  users: ['id', 'name', 'email', 'password', 'role'],
-  audit_logs: ['id', 'timestamp', 'userName', 'userEmail', 'userRole', 'action', 'category', 'details']
+  members: ['id', 'name', 'phone', 'address', 'note', 'plan', 'joined', 'start', 'expiry', 'trainer', 'status', 'payment', 'avatar', 'gym_id'],
+  plans: ['name', 'duration', 'price', 'popular', 'features', 'gym_id'],
+  trainers: ['name', 'specialization', 'experience', 'salary', 'members', 'rating', 'avatar', 'gym_id'],
+  expenses: ['id', 'title', 'category', 'amount', 'vendor', 'date', 'mode', 'status', 'gym_id'],
+  payments: ['invoice', 'member', 'amount', 'discount', 'tax', 'paid', 'balance', 'date', 'mode', 'receiptUrl', 'gym_id'],
+  attendance: ['id', 'name', 'checkIn', 'checkOut', 'duration', 'date', 'gym_id'],
+  users: ['id', 'name', 'email', 'password', 'role', 'gym_id'],
+  audit_logs: ['id', 'timestamp', 'userName', 'userEmail', 'userRole', 'action', 'category', 'details', 'gym_id']
 };
 
 function sanitizePayload<T>(obj: any, allowedKeys: string[]): T {
@@ -53,24 +69,27 @@ function sanitizePayload<T>(obj: any, allowedKeys: string[]): T {
   return clean as T;
 }
 
+function filterByGym<T extends { gym_id?: string }>(items: T[], gymId?: string): T[] {
+  const targetGym = gymId || 'gym-1';
+  return (items || []).filter(item => (item.gym_id || 'gym-1') === targetGym);
+}
+
 // ─── Local Storage DB Fallback & In-Memory Store ────────────────────────────
 const defaultPlans: PlanItem[] = [
-  { name: 'Monthly Plan', duration: '1 Month', price: 2500, popular: false, features: ['Full Gym Access', 'Locker Room', 'Free Fitness Assessment'] },
-  { name: 'Quarterly Plan', duration: '3 Months', price: 6500, popular: true, features: ['Full Gym Access', 'Locker Room', 'Personal Trainer (2 Sessions)', 'Diet Consultation'] },
-  { name: 'Half Yearly Plan', duration: '6 Months', price: 11000, popular: false, features: ['Full Gym Access', 'Locker Room', 'Personal Trainer (5 Sessions)', 'Full Body Composition Analysis', 'Diet Plan'] },
-  { name: 'Yearly Plan', duration: '1 Year', price: 18000, popular: false, features: ['Unlimited 24/7 Access', 'VIP Locker & Spa', 'Personal Trainer (12 Sessions)', 'Monthly Diet & Fitness Audit', 'Free Gym Merchandise'] },
+  { name: 'Monthly Plan', duration: '1 Month', price: 2500, popular: false, features: ['Full Gym Access', 'Locker Room', 'Free Fitness Assessment'], gym_id: 'gym-1' },
+  { name: 'Quarterly Plan', duration: '3 Months', price: 6500, popular: true, features: ['Full Gym Access', 'Locker Room', 'Personal Trainer (2 Sessions)', 'Diet Consultation'], gym_id: 'gym-1' },
+  { name: 'Half Yearly Plan', duration: '6 Months', price: 11000, popular: false, features: ['Full Gym Access', 'Locker Room', 'Personal Trainer (5 Sessions)', 'Full Body Composition Analysis', 'Diet Plan'], gym_id: 'gym-1' },
+  { name: 'Yearly Plan', duration: '1 Year', price: 18000, popular: false, features: ['Unlimited 24/7 Access', 'VIP Locker & Spa', 'Personal Trainer (12 Sessions)', 'Monthly Diet & Fitness Audit', 'Free Gym Merchandise'], gym_id: 'gym-1' },
 ];
 
-const defaultMembers: MemberItem[] = [];
-
 const defaultUsers: GymUser[] = [
-  { id: 'usr-1', name: 'Shivam Admin', email: 'shivamvr1998@gmail.com', password: 'Qwerty@123', role: 'Admin' },
-  { id: 'usr-2', name: 'Admin User', email: 'admin@championsgym.com', password: 'admin123', role: 'Admin' },
-  { id: 'usr-3', name: 'Manager Shivam', email: 'manager@championsgym.com', password: 'manager123', role: 'Manager' }
+  { id: 'usr-1', name: 'Shivam Admin', email: 'shivamvr1998@gmail.com', password: 'Qwerty@123', role: 'Admin', gym_id: 'gym-1' },
+  { id: 'usr-2', name: 'Admin User', email: 'admin@championsgym.com', password: 'admin123', role: 'Admin', gym_id: 'gym-1' },
+  { id: 'usr-3', name: 'Manager Shivam', email: 'manager@championsgym.com', password: 'manager123', role: 'Manager', gym_id: 'gym-1' }
 ];
 
 const defaultAuditLogs: AuditLogItem[] = [
-  { id: 'log-1', timestamp: '08 Aug 2026, 10:00 AM', userName: 'Shivam Admin', userEmail: 'shivamvr1998@gmail.com', userRole: 'Admin', action: 'System Initialized', category: 'System', details: 'Database initialized with standard plans' }
+  { id: 'log-1', timestamp: '08 Aug 2026, 10:00 AM', userName: 'Shivam Admin', userEmail: 'shivamvr1998@gmail.com', userRole: 'Admin', action: 'System Initialized', category: 'System', details: 'Database initialized with standard plans', gym_id: 'gym-1' }
 ];
 
 const STORAGE_KEY = 'fitpeak_gym_db';
@@ -79,12 +98,9 @@ const getStored = () => {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
+      if (!parsed.gyms || parsed.gyms.length === 0) parsed.gyms = defaultGyms;
       if (!parsed.plans || parsed.plans.length === 0) parsed.plans = defaultPlans;
       if (!parsed.members) parsed.members = [];
-      // Clean old hardcoded dummy members if present
-      if (parsed.members && parsed.members.some((m: any) => m.id === 'GM-1001' || m.id === 'GM-1002' || m.id === 'GM-1003')) {
-        parsed.members = parsed.members.filter((m: any) => m.id !== 'GM-1001' && m.id !== 'GM-1002' && m.id !== 'GM-1003');
-      }
       if (!parsed.users || parsed.users.length === 0) {
         parsed.users = defaultUsers;
       } else {
@@ -101,6 +117,7 @@ const getStored = () => {
     }
   } catch {}
   return {
+    gyms: defaultGyms,
     members: [],
     plans: defaultPlans,
     trainers: [],
@@ -120,32 +137,73 @@ const saveStored = (store: any) => {
 
 const localStore = getStored();
 
+// ─── Gyms DB API ────────────────────────────────────────────────────────────
+export async function getGymsDB(): Promise<Gym[]> {
+  try {
+    const { data, error } = await supabase.from('gyms').select('*');
+    if (!error && data && data.length > 0) {
+      localStore.gyms = data as Gym[];
+      saveStored(localStore);
+      return data as Gym[];
+    }
+  } catch (err) {
+    console.error('Supabase fetch gyms exception:', err);
+  }
+  return localStore.gyms || defaultGyms;
+}
+
+export async function addGymDB(gym: Gym): Promise<Gym> {
+  try {
+    const { data, error } = await supabase.from('gyms').insert([gym]).select('*');
+    if (error) {
+      console.error('Supabase addGym error:', error);
+    } else if (data && data.length > 0) {
+      const inserted = data[0] as Gym;
+      if (!localStore.gyms) localStore.gyms = [...defaultGyms];
+      localStore.gyms = [inserted, ...localStore.gyms.filter(g => g.id !== inserted.id)];
+      saveStored(localStore);
+      return inserted;
+    }
+  } catch (err) {
+    console.error('Supabase addGym exception:', err);
+  }
+  if (!localStore.gyms) localStore.gyms = [...defaultGyms];
+  localStore.gyms = [gym, ...localStore.gyms.filter(g => g.id !== gym.id)];
+  saveStored(localStore);
+  return gym;
+}
+
 // ─── Members DB API ─────────────────────────────────────────────────────────
-export async function getMembersDB(): Promise<MemberItem[]> {
+export async function getMembersDB(gymId?: string): Promise<MemberItem[]> {
+  const targetGym = gymId || 'gym-1';
   try {
     const { data, error } = await supabase.from('members').select('*').order('created_at', { ascending: false });
     if (error) {
       console.error('Supabase getMembers error:', error);
-      return localStore.members || [];
+      return filterByGym(localStore.members || [], targetGym);
     }
     const result = data ? (data as MemberItem[]) : [];
+    // Sync local store
     localStore.members = result;
     saveStored(localStore);
-    return result;
+    return filterByGym(result, targetGym);
   } catch (err) {
     console.error('Supabase fetch exception:', err);
-    return localStore.members || [];
+    return filterByGym(localStore.members || [], targetGym);
   }
 }
 
-export async function addMemberDB(member: MemberItem): Promise<MemberItem> {
-  const payload = sanitizePayload<MemberItem>(member, SCHEMAS.members);
+export async function addMemberDB(member: MemberItem, gymId?: string): Promise<MemberItem> {
+  const targetGym = member.gym_id || gymId || 'gym-1';
+  const memberWithGym: MemberItem = { ...member, gym_id: targetGym };
+  const payload = sanitizePayload<MemberItem>(memberWithGym, SCHEMAS.members);
+  
   try {
     const { data, error } = await supabase.from('members').insert([payload]).select('*');
     if (error) {
       console.error('Supabase addMember error:', error);
     } else if (data && data.length > 0) {
-      const inserted = { ...member, ...(data[0] as MemberItem) };
+      const inserted = { ...memberWithGym, ...(data[0] as MemberItem) };
       localStore.members = [inserted, ...localStore.members.filter(m => m.id !== inserted.id)];
       saveStored(localStore);
       return inserted;
@@ -153,9 +211,9 @@ export async function addMemberDB(member: MemberItem): Promise<MemberItem> {
   } catch (err) {
     console.error('Supabase insert exception:', err);
   }
-  localStore.members = [member, ...localStore.members.filter(m => m.id !== member.id)];
+  localStore.members = [memberWithGym, ...localStore.members.filter(m => m.id !== memberWithGym.id)];
   saveStored(localStore);
-  return member;
+  return memberWithGym;
 }
 
 export async function updateMemberDB(updated: MemberItem): Promise<MemberItem> {
@@ -183,43 +241,52 @@ export async function deleteMemberDB(id: string): Promise<void> {
 }
 
 // ─── Plans DB API ───────────────────────────────────────────────────────────
-export async function getPlansDB(): Promise<PlanItem[]> {
+export async function getPlansDB(gymId?: string): Promise<PlanItem[]> {
+  const targetGym = gymId || 'gym-1';
   try {
     const { data, error } = await supabase.from('plans').select('*');
-    if (error) {
-      console.error('Supabase getPlans error:', error);
-      return localStore.plans;
-    }
+    if (error) console.error('Supabase getPlans error:', error);
     if (data && data.length > 0) {
       localStore.plans = data as PlanItem[];
       saveStored(localStore);
-      return data as PlanItem[];
+      const filtered = filterByGym(data as PlanItem[], targetGym);
+      if (filtered.length > 0) return filtered;
     }
-    return localStore.plans;
   } catch (err) {
     console.error('Supabase fetch plans exception:', err);
-    return localStore.plans;
   }
+  
+  let filtered = filterByGym(localStore.plans || [], targetGym);
+  if (filtered.length === 0) {
+    // Clone default plans for target gym if empty
+    const gymDefaults = defaultPlans.map(p => ({ ...p, gym_id: targetGym }));
+    localStore.plans = [...(localStore.plans || []), ...gymDefaults];
+    saveStored(localStore);
+    filtered = gymDefaults;
+  }
+  return filtered;
 }
 
-export async function addPlanDB(plan: PlanItem): Promise<PlanItem> {
-  const payload = sanitizePayload<PlanItem>(plan, SCHEMAS.plans);
+export async function addPlanDB(plan: PlanItem, gymId?: string): Promise<PlanItem> {
+  const targetGym = plan.gym_id || gymId || 'gym-1';
+  const planWithGym: PlanItem = { ...plan, gym_id: targetGym };
+  const payload = sanitizePayload<PlanItem>(planWithGym, SCHEMAS.plans);
   try {
     const { data, error } = await supabase.from('plans').insert([payload]).select('*');
     if (error) {
       console.error('Supabase addPlan error:', error);
     } else if (data && data.length > 0) {
       const inserted = data[0] as PlanItem;
-      localStore.plans = [inserted, ...localStore.plans.filter(p => p.name !== inserted.name)];
+      localStore.plans = [inserted, ...localStore.plans.filter(p => !(p.name === inserted.name && (p.gym_id || 'gym-1') === targetGym))];
       saveStored(localStore);
       return inserted;
     }
   } catch (err) {
     console.error('Supabase addPlan exception:', err);
   }
-  localStore.plans = [plan, ...localStore.plans.filter(p => p.name !== plan.name)];
+  localStore.plans = [planWithGym, ...localStore.plans.filter(p => !(p.name === planWithGym.name && (p.gym_id || 'gym-1') === targetGym))];
   saveStored(localStore);
-  return plan;
+  return planWithGym;
 }
 
 export async function updatePlanDB(updated: PlanItem, oldName?: string): Promise<PlanItem> {
@@ -248,40 +315,42 @@ export async function deletePlanDB(name: string): Promise<void> {
 }
 
 // ─── Trainers DB API ────────────────────────────────────────────────────────
-export async function getTrainersDB(): Promise<TrainerItem[]> {
+export async function getTrainersDB(gymId?: string): Promise<TrainerItem[]> {
+  const targetGym = gymId || 'gym-1';
   try {
     const { data, error } = await supabase.from('trainers').select('*');
     if (error) console.error('Supabase getTrainers error:', error);
     if (data && data.length > 0) {
       localStore.trainers = data as TrainerItem[];
       saveStored(localStore);
-      return data as TrainerItem[];
+      return filterByGym(data as TrainerItem[], targetGym);
     }
-    return localStore.trainers;
   } catch (err) {
     console.error('Supabase fetch trainers exception:', err);
-    return localStore.trainers;
   }
+  return filterByGym(localStore.trainers || [], targetGym);
 }
 
-export async function addTrainerDB(trainer: TrainerItem): Promise<TrainerItem> {
-  const payload = sanitizePayload<TrainerItem>(trainer, SCHEMAS.trainers);
+export async function addTrainerDB(trainer: TrainerItem, gymId?: string): Promise<TrainerItem> {
+  const targetGym = trainer.gym_id || gymId || 'gym-1';
+  const trainerWithGym: TrainerItem = { ...trainer, gym_id: targetGym };
+  const payload = sanitizePayload<TrainerItem>(trainerWithGym, SCHEMAS.trainers);
   try {
     const { data, error } = await supabase.from('trainers').insert([payload]).select('*');
     if (error) {
       console.error('Supabase addTrainer error:', error);
     } else if (data && data.length > 0) {
       const inserted = data[0] as TrainerItem;
-      localStore.trainers = [inserted, ...localStore.trainers.filter(t => t.name !== inserted.name)];
+      localStore.trainers = [inserted, ...localStore.trainers.filter(t => !(t.name === inserted.name && (t.gym_id || 'gym-1') === targetGym))];
       saveStored(localStore);
       return inserted;
     }
   } catch (err) {
     console.error('Supabase addTrainer exception:', err);
   }
-  localStore.trainers = [trainer, ...localStore.trainers.filter(t => t.name !== trainer.name)];
+  localStore.trainers = [trainerWithGym, ...localStore.trainers.filter(t => !(t.name === trainerWithGym.name && (t.gym_id || 'gym-1') === targetGym))];
   saveStored(localStore);
-  return trainer;
+  return trainerWithGym;
 }
 
 export async function updateTrainerDB(updated: TrainerItem): Promise<TrainerItem> {
@@ -309,24 +378,26 @@ export async function deleteTrainerDB(name: string): Promise<void> {
 }
 
 // ─── Expenses DB API ────────────────────────────────────────────────────────
-export async function getExpensesDB(): Promise<ExpenseItem[]> {
+export async function getExpensesDB(gymId?: string): Promise<ExpenseItem[]> {
+  const targetGym = gymId || 'gym-1';
   try {
     const { data, error } = await supabase.from('expenses').select('*');
     if (error) console.error('Supabase getExpenses error:', error);
     if (data && data.length > 0) {
       localStore.expenses = data as ExpenseItem[];
       saveStored(localStore);
-      return data as ExpenseItem[];
+      return filterByGym(data as ExpenseItem[], targetGym);
     }
-    return localStore.expenses;
   } catch (err) {
     console.error('Supabase fetch expenses exception:', err);
-    return localStore.expenses;
   }
+  return filterByGym(localStore.expenses || [], targetGym);
 }
 
-export async function addExpenseDB(expense: ExpenseItem): Promise<ExpenseItem> {
-  const payload = sanitizePayload<ExpenseItem>(expense, SCHEMAS.expenses);
+export async function addExpenseDB(expense: ExpenseItem, gymId?: string): Promise<ExpenseItem> {
+  const targetGym = expense.gym_id || gymId || 'gym-1';
+  const expenseWithGym: ExpenseItem = { ...expense, gym_id: targetGym };
+  const payload = sanitizePayload<ExpenseItem>(expenseWithGym, SCHEMAS.expenses);
   try {
     const { data, error } = await supabase.from('expenses').insert([payload]).select('*');
     if (error) {
@@ -340,9 +411,9 @@ export async function addExpenseDB(expense: ExpenseItem): Promise<ExpenseItem> {
   } catch (err) {
     console.error('Supabase addExpense exception:', err);
   }
-  localStore.expenses = [expense, ...localStore.expenses];
+  localStore.expenses = [expenseWithGym, ...localStore.expenses];
   saveStored(localStore);
-  return expense;
+  return expenseWithGym;
 }
 
 export async function updateExpenseDB(idx: number, updated: ExpenseItem): Promise<ExpenseItem> {
@@ -385,24 +456,26 @@ export async function deleteExpenseDB(idx: number): Promise<void> {
 }
 
 // ─── Payments DB API ────────────────────────────────────────────────────────
-export async function getPaymentsDB(): Promise<PaymentItem[]> {
+export async function getPaymentsDB(gymId?: string): Promise<PaymentItem[]> {
+  const targetGym = gymId || 'gym-1';
   try {
     const { data, error } = await supabase.from('payments').select('*').order('created_at', { ascending: false });
     if (error) console.error('Supabase getPayments error:', error);
     if (data && data.length > 0) {
       localStore.payments = data as PaymentItem[];
       saveStored(localStore);
-      return data as PaymentItem[];
+      return filterByGym(data as PaymentItem[], targetGym);
     }
-    return localStore.payments || [];
   } catch (err) {
     console.error('Supabase fetch payments exception:', err);
-    return localStore.payments || [];
   }
+  return filterByGym(localStore.payments || [], targetGym);
 }
 
-export async function addPaymentDB(payment: PaymentItem): Promise<PaymentItem> {
-  const payload = sanitizePayload<PaymentItem>(payment, SCHEMAS.payments);
+export async function addPaymentDB(payment: PaymentItem, gymId?: string): Promise<PaymentItem> {
+  const targetGym = payment.gym_id || gymId || 'gym-1';
+  const paymentWithGym: PaymentItem = { ...payment, gym_id: targetGym };
+  const payload = sanitizePayload<PaymentItem>(paymentWithGym, SCHEMAS.payments);
   try {
     const { data, error } = await supabase.from('payments').insert([payload]).select('*');
     if (error) {
@@ -418,9 +491,9 @@ export async function addPaymentDB(payment: PaymentItem): Promise<PaymentItem> {
     console.error('Supabase addPayment exception:', err);
   }
   if (!localStore.payments) localStore.payments = [];
-  localStore.payments = [payment, ...localStore.payments.filter(p => p.invoice !== payment.invoice)];
+  localStore.payments = [paymentWithGym, ...localStore.payments.filter(p => p.invoice !== paymentWithGym.invoice)];
   saveStored(localStore);
-  return payment;
+  return paymentWithGym;
 }
 
 export async function deletePaymentDB(invoice: string): Promise<void> {
@@ -437,24 +510,26 @@ export async function deletePaymentDB(invoice: string): Promise<void> {
 }
 
 // ─── Attendance DB API ──────────────────────────────────────────────────────
-export async function getAttendanceDB(): Promise<AttendanceItem[]> {
+export async function getAttendanceDB(gymId?: string): Promise<AttendanceItem[]> {
+  const targetGym = gymId || 'gym-1';
   try {
     const { data, error } = await supabase.from('attendance').select('*').order('created_at', { ascending: false });
     if (error) console.error('Supabase getAttendance error:', error);
     if (data && data.length > 0) {
       localStore.attendance = data as AttendanceItem[];
       saveStored(localStore);
-      return data as AttendanceItem[];
+      return filterByGym(data as AttendanceItem[], targetGym);
     }
-    return localStore.attendance || [];
   } catch (err) {
     console.error('Supabase fetch attendance exception:', err);
-    return localStore.attendance || [];
   }
+  return filterByGym(localStore.attendance || [], targetGym);
 }
 
-export async function addAttendanceDB(item: AttendanceItem): Promise<AttendanceItem> {
-  const payload = sanitizePayload<AttendanceItem>(item, SCHEMAS.attendance);
+export async function addAttendanceDB(item: AttendanceItem, gymId?: string): Promise<AttendanceItem> {
+  const targetGym = item.gym_id || gymId || 'gym-1';
+  const itemWithGym: AttendanceItem = { ...item, gym_id: targetGym };
+  const payload = sanitizePayload<AttendanceItem>(itemWithGym, SCHEMAS.attendance);
   try {
     const { data, error } = await supabase.from('attendance').insert([payload]).select('*');
     if (error) {
@@ -470,9 +545,9 @@ export async function addAttendanceDB(item: AttendanceItem): Promise<AttendanceI
     console.error('Supabase addAttendance exception:', err);
   }
   if (!localStore.attendance) localStore.attendance = [];
-  localStore.attendance = [item, ...localStore.attendance];
+  localStore.attendance = [itemWithGym, ...localStore.attendance];
   saveStored(localStore);
-  return item;
+  return itemWithGym;
 }
 
 export async function updateAttendanceDB(updated: AttendanceItem): Promise<AttendanceItem> {
@@ -503,24 +578,26 @@ export async function deleteAttendanceDB(id: string, checkIn: string): Promise<v
 }
 
 // ─── Users DB API ───────────────────────────────────────────────────────────
-export async function getUsersDB(): Promise<GymUser[]> {
+export async function getUsersDB(gymId?: string): Promise<GymUser[]> {
   try {
     const { data, error } = await supabase.from('users').select('*');
     if (error) console.error('Supabase getUsers error:', error);
     if (data && data.length > 0) {
       localStore.users = data as GymUser[];
       saveStored(localStore);
-      return data as GymUser[];
     }
-    return localStore.users || [];
   } catch (err) {
     console.error('Supabase fetch users exception:', err);
-    return localStore.users || [];
   }
+  const users = localStore.users || defaultUsers;
+  if (!gymId) return users;
+  return users.filter((u: GymUser) => !u.gym_id || u.gym_id === gymId);
 }
 
-export async function addUserDB(user: GymUser): Promise<GymUser> {
-  const payload = sanitizePayload<GymUser>(user, SCHEMAS.users);
+export async function addUserDB(user: GymUser, gymId?: string): Promise<GymUser> {
+  const targetGym = user.gym_id || gymId;
+  const userWithGym: GymUser = { ...user, gym_id: targetGym };
+  const payload = sanitizePayload<GymUser>(userWithGym, SCHEMAS.users);
   try {
     const { data, error } = await supabase.from('users').insert([payload]).select('*');
     if (error) {
@@ -536,9 +613,9 @@ export async function addUserDB(user: GymUser): Promise<GymUser> {
     console.error('Supabase addUser exception:', err);
   }
   if (!localStore.users) localStore.users = [];
-  localStore.users = [user, ...localStore.users.filter(u => u.id !== user.id)];
+  localStore.users = [userWithGym, ...localStore.users.filter(u => u.id !== userWithGym.id)];
   saveStored(localStore);
-  return user;
+  return userWithGym;
 }
 
 export async function deleteUserDB(id: string): Promise<void> {
@@ -555,24 +632,26 @@ export async function deleteUserDB(id: string): Promise<void> {
 }
 
 // ─── Audit Logs DB API ────────────────────────────────────────────────────────
-export async function getAuditLogsDB(): Promise<AuditLogItem[]> {
+export async function getAuditLogsDB(gymId?: string): Promise<AuditLogItem[]> {
+  const targetGym = gymId || 'gym-1';
   try {
     const { data, error } = await supabase.from('audit_logs').select('*').order('created_at', { ascending: false });
     if (error) console.error('Supabase getAuditLogs error:', error);
     if (data && data.length > 0) {
       localStore.auditLogs = data as AuditLogItem[];
       saveStored(localStore);
-      return data as AuditLogItem[];
+      return filterByGym(data as AuditLogItem[], targetGym);
     }
-    return localStore.auditLogs || [];
   } catch (err) {
     console.error('Supabase fetch audit logs exception:', err);
-    return localStore.auditLogs || [];
   }
+  return filterByGym(localStore.auditLogs || [], targetGym);
 }
 
-export async function addAuditLogDB(log: AuditLogItem): Promise<AuditLogItem> {
-  const payload = sanitizePayload<AuditLogItem>(log, SCHEMAS.audit_logs);
+export async function addAuditLogDB(log: AuditLogItem, gymId?: string): Promise<AuditLogItem> {
+  const targetGym = log.gym_id || gymId || 'gym-1';
+  const logWithGym: AuditLogItem = { ...log, gym_id: targetGym };
+  const payload = sanitizePayload<AuditLogItem>(logWithGym, SCHEMAS.audit_logs);
   try {
     const { data, error } = await supabase.from('audit_logs').insert([payload]).select('*');
     if (error) {
@@ -588,16 +667,17 @@ export async function addAuditLogDB(log: AuditLogItem): Promise<AuditLogItem> {
     console.error('Supabase addAuditLog exception:', err);
   }
   if (!localStore.auditLogs) localStore.auditLogs = [];
-  localStore.auditLogs = [log, ...localStore.auditLogs];
+  localStore.auditLogs = [logWithGym, ...localStore.auditLogs];
   saveStored(localStore);
-  return log;
+  return logWithGym;
 }
 
 export async function logUserActivity(
   currentUser: GymUser | null,
   action: string,
   category: string,
-  details: string
+  details: string,
+  gymId?: string
 ): Promise<AuditLogItem> {
   const logItem: AuditLogItem = {
     id: `log-${Math.floor(100000 + Math.random() * 900000)}`,
@@ -614,13 +694,16 @@ export async function logUserActivity(
     userRole: currentUser?.role || 'Admin',
     action,
     category,
-    details
+    details,
+    gym_id: gymId || currentUser?.gym_id || 'gym-1'
   };
-  return await addAuditLogDB(logItem);
+  return await addAuditLogDB(logItem, gymId);
 }
 
-export async function refreshAllDBData() {
+export async function refreshAllDBData(gymId?: string) {
+  const targetGym = gymId || 'gym-1';
   const [
+    gyms,
     members,
     plans,
     trainers,
@@ -630,17 +713,19 @@ export async function refreshAllDBData() {
     users,
     auditLogs
   ] = await Promise.all([
-    getMembersDB(),
-    getPlansDB(),
-    getTrainersDB(),
-    getExpensesDB(),
-    getPaymentsDB(),
-    getAttendanceDB(),
-    getUsersDB(),
-    getAuditLogsDB()
+    getGymsDB(),
+    getMembersDB(targetGym),
+    getPlansDB(targetGym),
+    getTrainersDB(targetGym),
+    getExpensesDB(targetGym),
+    getPaymentsDB(targetGym),
+    getAttendanceDB(targetGym),
+    getUsersDB(targetGym),
+    getAuditLogsDB(targetGym)
   ]);
 
   return {
+    gyms,
     members,
     plans,
     trainers,
@@ -651,4 +736,3 @@ export async function refreshAllDBData() {
     auditLogs
   };
 }
-
