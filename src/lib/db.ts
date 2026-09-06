@@ -74,6 +74,22 @@ function filterByGym<T extends { gym_id?: string }>(items: T[], gymId?: string):
   return (items || []).filter(item => (item.gym_id || 'gym-1') === targetGym);
 }
 
+let hasLoggedOfflineWarning = false;
+
+function handleSupabaseError(action: string, error: any) {
+  if (!error) return;
+  const msg = typeof error === 'string' ? error : (error.message || error.details || JSON.stringify(error));
+  if (msg.includes('fetch failed') || msg.includes('ENOTFOUND') || msg.includes('Failed to fetch') || msg.includes('NetworkError')) {
+    if (!hasLoggedOfflineWarning) {
+      console.warn(`[DB Sync] Cloud DB unreachable (${action}). System running smoothly on local database storage.`);
+      hasLoggedOfflineWarning = true;
+    }
+  } else {
+    console.error(`[Supabase Error - ${action}]:`, error);
+  }
+}
+
+
 // ─── Local Storage DB Fallback & In-Memory Store ────────────────────────────
 const defaultPlans: PlanItem[] = [
   { name: 'Monthly Plan', duration: '1 Month', price: 2500, popular: false, features: ['Full Gym Access', 'Locker Room', 'Free Fitness Assessment'], gym_id: 'gym-1' },
@@ -141,13 +157,14 @@ const localStore = getStored();
 export async function getGymsDB(): Promise<Gym[]> {
   try {
     const { data, error } = await supabase.from('gyms').select('*');
+    if (error) handleSupabaseError('getGyms', error);
     if (!error && data && data.length > 0) {
       localStore.gyms = data as Gym[];
       saveStored(localStore);
       return data as Gym[];
     }
   } catch (err) {
-    console.error('Supabase fetch gyms exception:', err);
+    handleSupabaseError('getGyms', err);
   }
   return localStore.gyms || defaultGyms;
 }
@@ -156,7 +173,7 @@ export async function addGymDB(gym: Gym): Promise<Gym> {
   try {
     const { data, error } = await supabase.from('gyms').insert([gym]).select('*');
     if (error) {
-      console.error('Supabase addGym error:', error);
+      handleSupabaseError('addGym', error);
     } else if (data && data.length > 0) {
       const inserted = data[0] as Gym;
       if (!localStore.gyms) localStore.gyms = [...defaultGyms];
@@ -165,7 +182,7 @@ export async function addGymDB(gym: Gym): Promise<Gym> {
       return inserted;
     }
   } catch (err) {
-    console.error('Supabase addGym exception:', err);
+    handleSupabaseError('addGym', err);
   }
   if (!localStore.gyms) localStore.gyms = [...defaultGyms];
   localStore.gyms = [gym, ...localStore.gyms.filter(g => g.id !== gym.id)];
@@ -179,7 +196,7 @@ export async function getMembersDB(gymId?: string): Promise<MemberItem[]> {
   try {
     const { data, error } = await supabase.from('members').select('*').order('created_at', { ascending: false });
     if (error) {
-      console.error('Supabase getMembers error:', error);
+      handleSupabaseError('getMembers', error);
       return filterByGym(localStore.members || [], targetGym);
     }
     const result = data ? (data as MemberItem[]) : [];
@@ -188,7 +205,7 @@ export async function getMembersDB(gymId?: string): Promise<MemberItem[]> {
     saveStored(localStore);
     return filterByGym(result, targetGym);
   } catch (err) {
-    console.error('Supabase fetch exception:', err);
+    handleSupabaseError('getMembers', err);
     return filterByGym(localStore.members || [], targetGym);
   }
 }
@@ -201,7 +218,7 @@ export async function addMemberDB(member: MemberItem, gymId?: string): Promise<M
   try {
     const { data, error } = await supabase.from('members').insert([payload]).select('*');
     if (error) {
-      console.error('Supabase addMember error:', error);
+      handleSupabaseError('addMember', error);
     } else if (data && data.length > 0) {
       const inserted = { ...memberWithGym, ...(data[0] as MemberItem) };
       localStore.members = [inserted, ...localStore.members.filter(m => m.id !== inserted.id)];
@@ -209,7 +226,7 @@ export async function addMemberDB(member: MemberItem, gymId?: string): Promise<M
       return inserted;
     }
   } catch (err) {
-    console.error('Supabase insert exception:', err);
+    handleSupabaseError('addMember', err);
   }
   localStore.members = [memberWithGym, ...localStore.members.filter(m => m.id !== memberWithGym.id)];
   saveStored(localStore);
@@ -220,9 +237,9 @@ export async function updateMemberDB(updated: MemberItem): Promise<MemberItem> {
   const payload = sanitizePayload<MemberItem>(updated, SCHEMAS.members);
   try {
     const { error } = await supabase.from('members').update(payload).eq('id', updated.id);
-    if (error) console.error('Supabase updateMember error:', error);
+    if (error) handleSupabaseError('updateMember', error);
   } catch (err) {
-    console.error('Supabase update exception:', err);
+    handleSupabaseError('updateMember', err);
   }
   localStore.members = localStore.members.map((m: MemberItem) => m.id === updated.id ? updated : m);
   saveStored(localStore);
@@ -232,9 +249,9 @@ export async function updateMemberDB(updated: MemberItem): Promise<MemberItem> {
 export async function deleteMemberDB(id: string): Promise<void> {
   try {
     const { error } = await supabase.from('members').delete().eq('id', id);
-    if (error) console.error('Supabase deleteMember error:', error);
+    if (error) handleSupabaseError('deleteMember', error);
   } catch (err) {
-    console.error('Supabase delete exception:', err);
+    handleSupabaseError('deleteMember', err);
   }
   localStore.members = localStore.members.filter((m: MemberItem) => m.id !== id);
   saveStored(localStore);
@@ -245,7 +262,7 @@ export async function getPlansDB(gymId?: string): Promise<PlanItem[]> {
   const targetGym = gymId || 'gym-1';
   try {
     const { data, error } = await supabase.from('plans').select('*');
-    if (error) console.error('Supabase getPlans error:', error);
+    if (error) handleSupabaseError('getPlans', error);
     if (data && data.length > 0) {
       localStore.plans = data as PlanItem[];
       saveStored(localStore);
@@ -253,7 +270,7 @@ export async function getPlansDB(gymId?: string): Promise<PlanItem[]> {
       if (filtered.length > 0) return filtered;
     }
   } catch (err) {
-    console.error('Supabase fetch plans exception:', err);
+    handleSupabaseError('getPlans', err);
   }
   
   let filtered = filterByGym(localStore.plans || [], targetGym);
@@ -274,7 +291,7 @@ export async function addPlanDB(plan: PlanItem, gymId?: string): Promise<PlanIte
   try {
     const { data, error } = await supabase.from('plans').insert([payload]).select('*');
     if (error) {
-      console.error('Supabase addPlan error:', error);
+      handleSupabaseError('addPlan', error);
     } else if (data && data.length > 0) {
       const inserted = data[0] as PlanItem;
       localStore.plans = [inserted, ...localStore.plans.filter(p => !(p.name === inserted.name && (p.gym_id || 'gym-1') === targetGym))];
@@ -282,7 +299,7 @@ export async function addPlanDB(plan: PlanItem, gymId?: string): Promise<PlanIte
       return inserted;
     }
   } catch (err) {
-    console.error('Supabase addPlan exception:', err);
+    handleSupabaseError('addPlan', err);
   }
   localStore.plans = [planWithGym, ...localStore.plans.filter(p => !(p.name === planWithGym.name && (p.gym_id || 'gym-1') === targetGym))];
   saveStored(localStore);
@@ -294,9 +311,9 @@ export async function updatePlanDB(updated: PlanItem, oldName?: string): Promise
   const payload = sanitizePayload<PlanItem>(updated, SCHEMAS.plans);
   try {
     const { error } = await supabase.from('plans').update(payload).eq('name', targetName);
-    if (error) console.error('Supabase updatePlan error:', error);
+    if (error) handleSupabaseError('updatePlan', error);
   } catch (err) {
-    console.error('Supabase updatePlan exception:', err);
+    handleSupabaseError('updatePlan', err);
   }
   localStore.plans = localStore.plans.map((p: PlanItem) => p.name === targetName ? updated : p);
   saveStored(localStore);
@@ -306,9 +323,9 @@ export async function updatePlanDB(updated: PlanItem, oldName?: string): Promise
 export async function deletePlanDB(name: string): Promise<void> {
   try {
     const { error } = await supabase.from('plans').delete().eq('name', name);
-    if (error) console.error('Supabase deletePlan error:', error);
+    if (error) handleSupabaseError('deletePlan', error);
   } catch (err) {
-    console.error('Supabase deletePlan exception:', err);
+    handleSupabaseError('deletePlan', err);
   }
   localStore.plans = localStore.plans.filter((p: PlanItem) => p.name !== name);
   saveStored(localStore);
@@ -319,14 +336,14 @@ export async function getTrainersDB(gymId?: string): Promise<TrainerItem[]> {
   const targetGym = gymId || 'gym-1';
   try {
     const { data, error } = await supabase.from('trainers').select('*');
-    if (error) console.error('Supabase getTrainers error:', error);
+    if (error) handleSupabaseError('getTrainers', error);
     if (data && data.length > 0) {
       localStore.trainers = data as TrainerItem[];
       saveStored(localStore);
       return filterByGym(data as TrainerItem[], targetGym);
     }
   } catch (err) {
-    console.error('Supabase fetch trainers exception:', err);
+    handleSupabaseError('getTrainers', err);
   }
   return filterByGym(localStore.trainers || [], targetGym);
 }
@@ -338,7 +355,7 @@ export async function addTrainerDB(trainer: TrainerItem, gymId?: string): Promis
   try {
     const { data, error } = await supabase.from('trainers').insert([payload]).select('*');
     if (error) {
-      console.error('Supabase addTrainer error:', error);
+      handleSupabaseError('addTrainer', error);
     } else if (data && data.length > 0) {
       const inserted = data[0] as TrainerItem;
       localStore.trainers = [inserted, ...localStore.trainers.filter(t => !(t.name === inserted.name && (t.gym_id || 'gym-1') === targetGym))];
@@ -346,7 +363,7 @@ export async function addTrainerDB(trainer: TrainerItem, gymId?: string): Promis
       return inserted;
     }
   } catch (err) {
-    console.error('Supabase addTrainer exception:', err);
+    handleSupabaseError('addTrainer', err);
   }
   localStore.trainers = [trainerWithGym, ...localStore.trainers.filter(t => !(t.name === trainerWithGym.name && (t.gym_id || 'gym-1') === targetGym))];
   saveStored(localStore);
@@ -357,9 +374,9 @@ export async function updateTrainerDB(updated: TrainerItem): Promise<TrainerItem
   const payload = sanitizePayload<TrainerItem>(updated, SCHEMAS.trainers);
   try {
     const { error } = await supabase.from('trainers').update(payload).eq('name', updated.name);
-    if (error) console.error('Supabase updateTrainer error:', error);
+    if (error) handleSupabaseError('updateTrainer', error);
   } catch (err) {
-    console.error('Supabase updateTrainer exception:', err);
+    handleSupabaseError('updateTrainer', err);
   }
   localStore.trainers = localStore.trainers.map((t: TrainerItem) => t.name === updated.name ? updated : t);
   saveStored(localStore);
@@ -369,9 +386,9 @@ export async function updateTrainerDB(updated: TrainerItem): Promise<TrainerItem
 export async function deleteTrainerDB(name: string): Promise<void> {
   try {
     const { error } = await supabase.from('trainers').delete().eq('name', name);
-    if (error) console.error('Supabase deleteTrainer error:', error);
+    if (error) handleSupabaseError('deleteTrainer', error);
   } catch (err) {
-    console.error('Supabase deleteTrainer exception:', err);
+    handleSupabaseError('deleteTrainer', err);
   }
   localStore.trainers = localStore.trainers.filter((t: TrainerItem) => t.name !== name);
   saveStored(localStore);
@@ -382,14 +399,14 @@ export async function getExpensesDB(gymId?: string): Promise<ExpenseItem[]> {
   const targetGym = gymId || 'gym-1';
   try {
     const { data, error } = await supabase.from('expenses').select('*');
-    if (error) console.error('Supabase getExpenses error:', error);
+    if (error) handleSupabaseError('getExpenses', error);
     if (data && data.length > 0) {
       localStore.expenses = data as ExpenseItem[];
       saveStored(localStore);
       return filterByGym(data as ExpenseItem[], targetGym);
     }
   } catch (err) {
-    console.error('Supabase fetch expenses exception:', err);
+    handleSupabaseError('getExpenses', err);
   }
   return filterByGym(localStore.expenses || [], targetGym);
 }
@@ -401,7 +418,7 @@ export async function addExpenseDB(expense: ExpenseItem, gymId?: string): Promis
   try {
     const { data, error } = await supabase.from('expenses').insert([payload]).select('*');
     if (error) {
-      console.error('Supabase addExpense error:', error);
+      handleSupabaseError('addExpense', error);
     } else if (data && data.length > 0) {
       const inserted = data[0] as ExpenseItem;
       localStore.expenses = [inserted, ...localStore.expenses];
@@ -409,7 +426,7 @@ export async function addExpenseDB(expense: ExpenseItem, gymId?: string): Promis
       return inserted;
     }
   } catch (err) {
-    console.error('Supabase addExpense exception:', err);
+    handleSupabaseError('addExpense', err);
   }
   localStore.expenses = [expenseWithGym, ...localStore.expenses];
   saveStored(localStore);
@@ -423,9 +440,9 @@ export async function updateExpenseDB(idx: number, updated: ExpenseItem): Promis
   if (targetId) {
     try {
       const { error } = await supabase.from('expenses').update(payload).eq('id', targetId);
-      if (error) console.error('Supabase updateExpense error:', error);
+      if (error) handleSupabaseError('updateExpense', error);
     } catch (err) {
-      console.error('Supabase updateExpense exception:', err);
+      handleSupabaseError('updateExpense', err);
     }
   }
   localStore.expenses = localStore.expenses.map((e: ExpenseItem, i: number) => i === idx ? updated : e);
@@ -439,16 +456,16 @@ export async function deleteExpenseDB(idx: number): Promise<void> {
   if (targetId) {
     try {
       const { error } = await supabase.from('expenses').delete().eq('id', targetId);
-      if (error) console.error('Supabase deleteExpense error:', error);
+      if (error) handleSupabaseError('deleteExpense', error);
     } catch (err) {
-      console.error('Supabase deleteExpense exception:', err);
+      handleSupabaseError('deleteExpense', err);
     }
   } else if (target?.title) {
     try {
       const { error } = await supabase.from('expenses').delete().eq('title', target.title).eq('date', target.date);
-      if (error) console.error('Supabase deleteExpense error:', error);
+      if (error) handleSupabaseError('deleteExpense', error);
     } catch (err) {
-      console.error('Supabase deleteExpense exception:', err);
+      handleSupabaseError('deleteExpense', err);
     }
   }
   localStore.expenses = localStore.expenses.filter((_: any, i: number) => i !== idx);
@@ -460,14 +477,14 @@ export async function getPaymentsDB(gymId?: string): Promise<PaymentItem[]> {
   const targetGym = gymId || 'gym-1';
   try {
     const { data, error } = await supabase.from('payments').select('*').order('created_at', { ascending: false });
-    if (error) console.error('Supabase getPayments error:', error);
+    if (error) handleSupabaseError('getPayments', error);
     if (data && data.length > 0) {
       localStore.payments = data as PaymentItem[];
       saveStored(localStore);
       return filterByGym(data as PaymentItem[], targetGym);
     }
   } catch (err) {
-    console.error('Supabase fetch payments exception:', err);
+    handleSupabaseError('getPayments', err);
   }
   return filterByGym(localStore.payments || [], targetGym);
 }
@@ -479,7 +496,7 @@ export async function addPaymentDB(payment: PaymentItem, gymId?: string): Promis
   try {
     const { data, error } = await supabase.from('payments').insert([payload]).select('*');
     if (error) {
-      console.error('Supabase addPayment error:', error);
+      handleSupabaseError('addPayment', error);
     } else if (data && data.length > 0) {
       const inserted = data[0] as PaymentItem;
       if (!localStore.payments) localStore.payments = [];
@@ -488,7 +505,7 @@ export async function addPaymentDB(payment: PaymentItem, gymId?: string): Promis
       return inserted;
     }
   } catch (err) {
-    console.error('Supabase addPayment exception:', err);
+    handleSupabaseError('addPayment', err);
   }
   if (!localStore.payments) localStore.payments = [];
   localStore.payments = [paymentWithGym, ...localStore.payments.filter(p => p.invoice !== paymentWithGym.invoice)];
@@ -499,9 +516,9 @@ export async function addPaymentDB(payment: PaymentItem, gymId?: string): Promis
 export async function deletePaymentDB(invoice: string): Promise<void> {
   try {
     const { error } = await supabase.from('payments').delete().eq('invoice', invoice);
-    if (error) console.error('Supabase deletePayment error:', error);
+    if (error) handleSupabaseError('deletePayment', error);
   } catch (err) {
-    console.error('Supabase deletePayment exception:', err);
+    handleSupabaseError('deletePayment', err);
   }
   if (localStore.payments) {
     localStore.payments = localStore.payments.filter((p: PaymentItem) => p.invoice !== invoice);
@@ -514,14 +531,14 @@ export async function getAttendanceDB(gymId?: string): Promise<AttendanceItem[]>
   const targetGym = gymId || 'gym-1';
   try {
     const { data, error } = await supabase.from('attendance').select('*').order('created_at', { ascending: false });
-    if (error) console.error('Supabase getAttendance error:', error);
+    if (error) handleSupabaseError('getAttendance', error);
     if (data && data.length > 0) {
       localStore.attendance = data as AttendanceItem[];
       saveStored(localStore);
       return filterByGym(data as AttendanceItem[], targetGym);
     }
   } catch (err) {
-    console.error('Supabase fetch attendance exception:', err);
+    handleSupabaseError('getAttendance', err);
   }
   return filterByGym(localStore.attendance || [], targetGym);
 }
@@ -533,7 +550,7 @@ export async function addAttendanceDB(item: AttendanceItem, gymId?: string): Pro
   try {
     const { data, error } = await supabase.from('attendance').insert([payload]).select('*');
     if (error) {
-      console.error('Supabase addAttendance error:', error);
+      handleSupabaseError('addAttendance', error);
     } else if (data && data.length > 0) {
       const inserted = data[0] as AttendanceItem;
       if (!localStore.attendance) localStore.attendance = [];
@@ -542,7 +559,7 @@ export async function addAttendanceDB(item: AttendanceItem, gymId?: string): Pro
       return inserted;
     }
   } catch (err) {
-    console.error('Supabase addAttendance exception:', err);
+    handleSupabaseError('addAttendance', err);
   }
   if (!localStore.attendance) localStore.attendance = [];
   localStore.attendance = [itemWithGym, ...localStore.attendance];
@@ -554,9 +571,9 @@ export async function updateAttendanceDB(updated: AttendanceItem): Promise<Atten
   const payload = sanitizePayload<AttendanceItem>(updated, SCHEMAS.attendance);
   try {
     const { error } = await supabase.from('attendance').update(payload).eq('id', updated.id).eq('checkIn', updated.checkIn);
-    if (error) console.error('Supabase updateAttendance error:', error);
+    if (error) handleSupabaseError('updateAttendance', error);
   } catch (err) {
-    console.error('Supabase updateAttendance exception:', err);
+    handleSupabaseError('updateAttendance', err);
   }
   if (!localStore.attendance) localStore.attendance = [];
   localStore.attendance = localStore.attendance.map((a: AttendanceItem) => (a.id === updated.id && a.checkIn === updated.checkIn) ? updated : a);
@@ -567,9 +584,9 @@ export async function updateAttendanceDB(updated: AttendanceItem): Promise<Atten
 export async function deleteAttendanceDB(id: string, checkIn: string): Promise<void> {
   try {
     const { error } = await supabase.from('attendance').delete().eq('id', id).eq('checkIn', checkIn);
-    if (error) console.error('Supabase deleteAttendance error:', error);
+    if (error) handleSupabaseError('deleteAttendance', error);
   } catch (err) {
-    console.error('Supabase deleteAttendance exception:', err);
+    handleSupabaseError('deleteAttendance', err);
   }
   if (localStore.attendance) {
     localStore.attendance = localStore.attendance.filter((a: AttendanceItem) => !(a.id === id && a.checkIn === checkIn));
@@ -581,13 +598,13 @@ export async function deleteAttendanceDB(id: string, checkIn: string): Promise<v
 export async function getUsersDB(gymId?: string): Promise<GymUser[]> {
   try {
     const { data, error } = await supabase.from('users').select('*');
-    if (error) console.error('Supabase getUsers error:', error);
+    if (error) handleSupabaseError('getUsers', error);
     if (data && data.length > 0) {
       localStore.users = data as GymUser[];
       saveStored(localStore);
     }
   } catch (err) {
-    console.error('Supabase fetch users exception:', err);
+    handleSupabaseError('getUsers', err);
   }
   const users = localStore.users || defaultUsers;
   if (!gymId) return users;
@@ -601,7 +618,7 @@ export async function addUserDB(user: GymUser, gymId?: string): Promise<GymUser>
   try {
     const { data, error } = await supabase.from('users').insert([payload]).select('*');
     if (error) {
-      console.error('Supabase addUser error:', error);
+      handleSupabaseError('addUser', error);
     } else if (data && data.length > 0) {
       const inserted = data[0] as GymUser;
       if (!localStore.users) localStore.users = [];
@@ -610,7 +627,7 @@ export async function addUserDB(user: GymUser, gymId?: string): Promise<GymUser>
       return inserted;
     }
   } catch (err) {
-    console.error('Supabase addUser exception:', err);
+    handleSupabaseError('addUser', err);
   }
   if (!localStore.users) localStore.users = [];
   localStore.users = [userWithGym, ...localStore.users.filter(u => u.id !== userWithGym.id)];
@@ -621,9 +638,9 @@ export async function addUserDB(user: GymUser, gymId?: string): Promise<GymUser>
 export async function deleteUserDB(id: string): Promise<void> {
   try {
     const { error } = await supabase.from('users').delete().eq('id', id);
-    if (error) console.error('Supabase deleteUser error:', error);
+    if (error) handleSupabaseError('deleteUser', error);
   } catch (err) {
-    console.error('Supabase deleteUser exception:', err);
+    handleSupabaseError('deleteUser', err);
   }
   if (localStore.users) {
     localStore.users = localStore.users.filter((u: GymUser) => u.id !== id);
@@ -636,14 +653,14 @@ export async function getAuditLogsDB(gymId?: string): Promise<AuditLogItem[]> {
   const targetGym = gymId || 'gym-1';
   try {
     const { data, error } = await supabase.from('audit_logs').select('*').order('created_at', { ascending: false });
-    if (error) console.error('Supabase getAuditLogs error:', error);
+    if (error) handleSupabaseError('getAuditLogs', error);
     if (data && data.length > 0) {
       localStore.auditLogs = data as AuditLogItem[];
       saveStored(localStore);
       return filterByGym(data as AuditLogItem[], targetGym);
     }
   } catch (err) {
-    console.error('Supabase fetch audit logs exception:', err);
+    handleSupabaseError('getAuditLogs', err);
   }
   return filterByGym(localStore.auditLogs || [], targetGym);
 }
@@ -655,7 +672,7 @@ export async function addAuditLogDB(log: AuditLogItem, gymId?: string): Promise<
   try {
     const { data, error } = await supabase.from('audit_logs').insert([payload]).select('*');
     if (error) {
-      console.error('Supabase addAuditLog error:', error);
+      handleSupabaseError('addAuditLog', error);
     } else if (data && data.length > 0) {
       const inserted = data[0] as AuditLogItem;
       if (!localStore.auditLogs) localStore.auditLogs = [];
@@ -664,7 +681,7 @@ export async function addAuditLogDB(log: AuditLogItem, gymId?: string): Promise<
       return inserted;
     }
   } catch (err) {
-    console.error('Supabase addAuditLog exception:', err);
+    handleSupabaseError('addAuditLog', err);
   }
   if (!localStore.auditLogs) localStore.auditLogs = [];
   localStore.auditLogs = [logWithGym, ...localStore.auditLogs];
